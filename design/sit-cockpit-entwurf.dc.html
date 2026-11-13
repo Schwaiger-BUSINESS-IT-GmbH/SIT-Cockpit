@@ -1,0 +1,1201 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>SIT-Cockpit</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#4D7A12}a:hover{color:#231F20}
+:focus-visible{outline:2px solid #4D7A12;outline-offset:2px}
+aside :focus-visible{outline-color:#99CC33}
+::selection{background:#D9EDB3;color:#231F20}
+</style>
+</helmet>
+<div style="min-height: 100vh; display: flex; flex-wrap: wrap; align-items: stretch; background: #F6F6F4; color: #231F20; font-family: Inter, 'Segoe UI', system-ui, sans-serif; font-size: 14px; line-height: 1.45; font-variant-numeric: tabular-nums">
+
+  <aside style="flex: 1 1 240px; max-width: 100%; background: #231F20; color: #FFFFFF; padding: 28px 14px; box-sizing: border-box; display: flex; flex-direction: column; gap: 6px">
+    <div style="display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 0 4px 22px">
+      <img src="/_blob/46a59ace37f481f1a71af3ef3f17e14f" alt="Schwaiger Business IT" style="display: block; width: 170px; max-width: 100%; height: auto">
+      <div style="display: flex; align-items: baseline; gap: 8px">
+        <span style="font-weight: 700; font-size: 19px; letter-spacing: 0.01em">SIT-Cockpit</span>
+        <span style="font-size: 12px; font-weight: 600; letter-spacing: 0.12em; color: #B5B1B2">ENTWURF</span>
+      </div>
+    </div>
+    <div style="font-size: 12px; font-weight: 600; letter-spacing: 0.12em; color: #B5B1B2; padding: 0 4px 6px">ANSICHT</div>
+    <button type="button" onClick="{{zeigeKunden}}" style="display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px; padding: 0 12px; border-radius: 6px; border: none; background: {{navKundenBg}}; color: #FFFFFF; font: inherit; font-size: 14px; font-weight: 500; text-align: left; cursor: pointer">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"></rect><path d="M8 20h8M12 16v4"></path></svg>
+      Kundenansicht
+    </button>
+    <button type="button" onClick="{{zeigeTickets}}" style="display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px; padding: 0 12px; border-radius: 6px; border: none; background: {{navTicketsBg}}; color: #FFFFFF; font: inherit; font-size: 14px; font-weight: 500; text-align: left; cursor: pointer">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-2a2 2 0 0 0 0-4z"></path></svg>
+      <span style="flex: 1 1 auto">Alle Tickets</span>
+      <span style="font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 999px; background: #99CC33; color: #231F20">{{anzahlOffen}}</span>
+    </button>
+    <div style="height: 1px; background: #3A3536; margin: 14px 4px"></div>
+    <div style="font-size: 12px; font-weight: 600; letter-spacing: 0.12em; color: #B5B1B2; padding: 0 4px 6px">KUNDEN</div>
+    <label for="kundensuche" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Kunde suchen</label>
+    <input id="kundensuche" type="search" placeholder="Kunde suchen …" value="{{query}}" onChange="{{onSearch}}" style="height: 40px; margin-bottom: 8px; padding: 0 12px; border: 1px solid #4A4546; border-radius: 6px; background: #2E2A2B; color: #FFFFFF; font: inherit; font-size: 13px; box-sizing: border-box; width: 100%">
+    <sc-for list="{{kunden}}" as="k" hint-placeholder-count="5">
+      <button type="button" onClick="{{k.pick}}" aria-current="{{k.aktuell}}" style="display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-height: 52px; padding: 8px 12px; border-radius: 6px; border: 1px solid {{k.bd}}; background: {{k.bg}}; color: #FFFFFF; font: inherit; text-align: left; cursor: pointer">
+        <span style="display: flex; flex-direction: column; min-width: 0">
+          <span title="{{k.name}}" style="font-weight: 500; font-size: 14px; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden">{{k.name}}</span>
+          <span style="font-size: 12px; color: #B5B1B2">{{k.sub}}</span>
+        </span>
+        <sc-if value="{{k.hatBadge}}" hint-placeholder-val="{{ true }}">
+          <span style="flex-shrink: 0; white-space: nowrap; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 4px; background: {{k.badgeBg}}; color: {{k.badgeFg}}">{{k.badge}}</span>
+        </sc-if>
+      </button>
+    </sc-for>
+    <sc-if value="{{keineTreffer}}" hint-placeholder-val="{{ false }}">
+      <div style="font-size: 13px; color: #B5B1B2; padding: 8px 4px">Kein Kunde gefunden.</div>
+    </sc-if>
+  </aside>
+
+  <main style="flex: 999 1 560px; min-width: 0; padding: 32px 36px; box-sizing: border-box">
+  <sc-if value="{{keineKundenSicht}}" hint-placeholder-val="{{ false }}">
+    <div style="background: #FFFFFF; border: 1px solid #E4E3E1; border-radius: 8px; padding: 32px; max-width: 560px">
+      <h1 style="margin: 0; font-size: 22px; font-weight: 700">Keine Kundendaten erhalten</h1>
+      <p style="margin: 8px 0 18px; color: #4F4B4C">Atera hat keine Kunden geliefert. Meist ist die Verbindung oder der API-Schlüssel das Problem. Prüfe die Anbindung und lade dann neu.</p>
+      <button type="button" style="min-height: 40px; padding: 0 16px; border-radius: 6px; border: none; background: {{accent}}; color: #231F20; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer">Erneut laden</button>
+    </div>
+  </sc-if>
+  <sc-if value="{{kundenSicht}}" hint-placeholder-val="{{ true }}">
+  <div style="display: flex; flex-direction: column; gap: 24px">
+
+    <div style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px">
+      <div style="min-width: 0">
+        <div style="font-size: 12px; font-weight: 600; letter-spacing: 0.14em; color: #5F5A5B">SIT-COCKPIT / {{c.nr}}</div>
+        <h1 style="margin: 8px 0 0; font-size: 28px; font-weight: 700; letter-spacing: -0.01em; overflow-wrap: anywhere; text-wrap: balance">{{c.name}}</h1>
+        <sc-if value="{{hatKontakt}}" hint-placeholder-val="{{ true }}">
+          <div style="margin-top: 4px; font-size: 13px; color: #5F5A5B">Ansprechpartner: {{c.kontakt}}</div>
+        </sc-if>
+      </div>
+      <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 10px">
+        <div style="font-size: 12px; font-weight: 500; color: #4D7A12"><span aria-hidden="true" style="display: inline-block; width: 7px; height: 7px; border-radius: 999px; background: #4D7A12; margin-right: 6px; vertical-align: middle"></span>Beispieldaten · Letzte Aktualisierung: vor 2 Min.</div>
+        <div style="display: flex; flex-wrap: wrap; gap: 8px">
+          <button type="button" style="min-height: 36px; padding: 0 14px; border-radius: 6px; border: none; background: #ECEBE8; color: #231F20; font: inherit; font-size: 13px; font-weight: 500; cursor: pointer">In Atera öffnen</button>
+          <button type="button" style="min-height: 36px; padding: 0 14px; border-radius: 6px; border: none; background: #ECEBE8; color: #231F20; font: inherit; font-size: 13px; font-weight: 500; cursor: pointer">In weclapp öffnen</button>
+          <button type="button" style="min-height: 36px; padding: 0 14px; border-radius: 6px; border: none; background: {{accent}}; color: #231F20; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer">Neues Ticket</button>
+        </div>
+      </div>
+    </div>
+
+    <sc-if value="{{ausfall}}" hint-placeholder-val="{{ false }}">
+      <div role="status" style="display: flex; align-items: flex-start; gap: 12px; padding: 14px 18px; border: 1px solid #F3B9B9; background: #FDECEC; border-radius: 8px; color: #7A1414">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px"><path d="M12 9v4M12 17h.01"></path><path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"></path></svg>
+        <div><div style="font-weight: 700">Möglicher Strom- oder Internetausfall</div><div style="font-size: 13px">{{ausfallText}}</div></div>
+      </div>
+    </sc-if>
+
+    <section aria-label="Kennzahlen" style="display: flex; flex-wrap: wrap; gap: 18px">
+      <div style="flex: 1 1 180px; background: #FFFFFF; border: 1px solid #E4E3E1; border-radius: 8px; padding: 20px 22px">
+        <div style="font-size: 13px; color: #4F4B4C">Geräte online</div>
+        <div style="font-size: 30px; font-weight: 700; margin-top: 8px">{{kpi.online}}</div>
+      </div>
+      <div style="flex: 1 1 180px; background: #FFFFFF; border: 1px solid #E4E3E1; border-radius: 8px; padding: 20px 22px">
+        <div style="font-size: 13px; color: #4F4B4C">Handlungsbedarf</div>
+        <div style="font-size: 30px; font-weight: 700; margin-top: 8px; color: {{kpi.bedarfFg}}">{{kpi.bedarf}}</div>
+        <div style="font-size: 12px; color: #5F5A5B">{{kpi.bedarfSub}}</div>
+      </div>
+      <div style="flex: 1 1 180px; background: #FFFFFF; border: 1px solid #E4E3E1; border-radius: 8px; padding: 20px 22px">
+        <div style="font-size: 13px; color: #4F4B4C">Offene Tickets</div>
+        <div style="font-size: 30px; font-weight: 700; margin-top: 8px">{{kpi.tickets}}</div>
+      </div>
+      <div style="flex: 1 1 180px; background: #FFFFFF; border: 1px solid #E4E3E1; border-radius: 8px; padding: 20px 22px">
+        <div style="font-size: 13px; color: #4F4B4C">Zeit diesen Monat · weclapp</div>
+        <div style="font-size: 30px; font-weight: 700; margin-top: 8px">{{c.zeit}}</div>
+      </div>
+    </section>
+
+    <section style="background: #FFFFFF; border: 1px solid #E4E3E1; border-radius: 8px; padding: 22px 22px 12px">
+      <div style="display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px; padding-bottom: 14px">
+        <div>
+          <h2 style="margin: 0; font-size: 18px; font-weight: 700">Geräte</h2>
+          <div style="margin-top: 4px; font-size: 12px; color: #5F5A5B">Aus Atera · Zeile anklicken für Details · Handlungsbedarf zuerst</div>
+        </div>
+        <button type="button" onClick="{{toggleAll}}" style="min-height: 36px; padding: 0 14px; border-radius: 6px; border: none; background: #ECEBE8; color: #231F20; font: inherit; font-size: 13px; font-weight: 500; cursor: pointer">{{toggleLabel}}</button>
+      </div>
+      <div style="overflow-x: auto">
+        <div style="min-width: 760px">
+          <div style="display: grid; grid-template-columns: minmax(0, 1.7fr) 110px minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.7fr); gap: 16px; padding: 10px 12px; border-bottom: 1px solid #E4E3E1; font-size: 12px; font-weight: 600; letter-spacing: 0.1em; color: #4F4B4C">
+            <span>GERÄT</span><span>ZUSTAND</span><span>LETZTE MELDUNG</span><span>SYSTEMSTART</span><span>LAUFZEIT</span><span>HINWEIS</span>
+          </div>
+          <sc-for list="{{geraete}}" as="g" hint-placeholder-count="3">
+            <div style="border-bottom: 1px solid #EFEEEC">
+              <button type="button" onClick="{{g.toggle}}" aria-expanded="{{g.offenAttr}}" style="display: grid; grid-template-columns: minmax(0, 1.7fr) 110px minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.7fr); gap: 16px; align-items: center; width: 100%; padding: 14px 12px; border: none; background: {{g.rowBg}}; color: #231F20; font: inherit; font-size: 14px; text-align: left; cursor: pointer">
+                <span style="display: flex; align-items: center; gap: 10px; min-width: 0">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#5F5A5B" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; transform: rotate({{g.rot}}deg)"><path d="M9 6l6 6-6 6"></path></svg>
+                  <span aria-hidden="true" style="flex-shrink: 0; width: 8px; height: 8px; border-radius: 999px; background: {{g.dot}}"></span>
+                  <span style="display: flex; flex-direction: column; min-width: 0">
+                    <span style="font-weight: 600; overflow-wrap: anywhere">{{g.name}}</span>
+                    <span style="font-size: 12px; color: #5F5A5B">{{g.typ}} · {{g.status}} · Agent {{g.agent}}</span>
+                  </span>
+                </span>
+                <span><span style="font-size: 12px; font-weight: 500; padding: 3px 8px; border-radius: 4px; background: {{g.badgeBg}}; color: {{g.badgeFg}}">{{g.badge}}</span></span>
+                <span style="color: #3F3B3C">{{g.zuletzt}}</span>
+                <span style="color: #3F3B3C">{{g.start}}</span>
+                <span style="color: #3F3B3C">{{g.laufzeit}}</span>
+                <span style="color: {{g.problemFg}}; font-weight: {{g.problemWeight}}; overflow-wrap: anywhere">{{g.problem}}</span>
+              </button>
+
+              <sc-if value="{{g.offen}}" hint-placeholder-val="{{ false }}">
+                <div style="padding: 4px 12px 20px 42px; display: flex; flex-direction: column; gap: 16px">
+
+                  <sc-if value="{{g.hatProblem}}" hint-placeholder-val="{{ true }}">
+                    <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; border: 1px solid {{g.pBd}}; background: {{g.pBg}}; border-radius: 8px; color: {{g.pFg}}">
+                      <div style="min-width: 0">
+                        <div style="font-weight: 700; overflow-wrap: anywhere">{{g.problem}}</div>
+                        <div style="font-size: 13px; margin-top: 2px">{{g.ticketHinweis}}</div>
+                      </div>
+                    </div>
+                  </sc-if>
+
+                  <div style="display: flex; flex-wrap: wrap; gap: 8px">
+                    <button type="button" style="display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 14px; border-radius: 6px; border: none; background: {{accent}}; color: #231F20; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"></rect><path d="M8 20h8M12 16v4"></path></svg>
+                      Fernwartung in Atera
+                    </button>
+                    <button type="button" style="min-height: 36px; padding: 0 14px; border-radius: 6px; border: none; background: #ECEBE8; color: #231F20; font: inherit; font-size: 13px; font-weight: 500; cursor: pointer">{{g.ticketButton}}</button>
+                  </div>
+
+                  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px 28px; padding: 14px 0; border-top: 1px solid #EFEEEC; border-bottom: 1px solid #EFEEEC">
+                    <div>
+                      <div style="font-size: 12px; color: #5F5A5B">CPU jetzt</div>
+                      <div style="font-size: 18px; font-weight: 700">{{g.cpu}}</div>
+                    </div>
+                    <div>
+                      <div style="font-size: 12px; color: #5F5A5B">RAM belegt</div>
+                      <div style="font-size: 18px; font-weight: 700">{{g.ram}}</div>
+                    </div>
+                    <div style="grid-column: span 2; min-width: 0">
+                      <div style="font-size: 12px; color: #5F5A5B; margin-bottom: 4px">Laufwerke</div>
+                      <div style="display: flex; flex-direction: column; gap: 6px">
+                        <sc-for list="{{g.laufwerke}}" as="l" hint-placeholder-count="2">
+                          <div style="display: grid; grid-template-columns: 40px minmax(0, 1fr) 120px; gap: 10px; align-items: center; font-size: 13px">
+                            <span style="font-weight: 600">{{l.name}}</span>
+                            <span style="height: 6px; background: #EFEEEC; border-radius: 999px; overflow: hidden"><span style="display: block; height: 6px; width: {{l.pct}}%; background: {{l.farbe}}; border-radius: 999px"></span></span>
+                            <span style="color: {{l.textFg}}; font-weight: {{l.textWeight}}">{{l.text}}</span>
+                          </div>
+                        </sc-for>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <sc-for list="{{g.sektionen}}" as="sek" hint-placeholder-count="3">
+                      <div style="border-bottom: 1px solid #EFEEEC">
+                        <button type="button" onClick="{{sek.toggle}}" aria-expanded="{{sek.offenAttr}}" style="display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px; padding: 8px 0; border: none; background: transparent; color: #231F20; font: inherit; font-size: 14px; text-align: left; cursor: pointer">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#5F5A5B" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; transform: rotate({{sek.rot}}deg)"><path d="M9 6l6 6-6 6"></path></svg>
+                          <span style="font-weight: 600; flex: 1 1 auto">{{sek.titel}}</span>
+                          <span style="font-size: 13px; color: {{sek.sumFg}}; font-weight: {{sek.sumW}}; text-align: right">{{sek.summe}}</span>
+                        </button>
+                      </div>
+                    </sc-for>
+
+                    <sc-if value="{{g.zeigVerlauf}}" hint-placeholder-val="{{ false }}">
+                      <div style="padding: 4px 0 8px">
+                        <div style="display: flex; gap: 14px; font-size: 12px; color: #4F4B4C; margin-bottom: 6px">
+                          <span><span aria-hidden="true" style="display: inline-block; width: 12px; height: 3px; background: #6FA01F; vertical-align: middle; margin-right: 5px"></span>CPU</span>
+                          <span><span aria-hidden="true" style="display: inline-block; width: 12px; height: 3px; background: #231F20; vertical-align: middle; margin-right: 5px"></span>RAM</span>
+                        </div>
+                        <svg viewBox="0 0 600 130" preserveAspectRatio="none" role="img" aria-label="Verlauf von CPU- und RAM-Auslastung der letzten 24 Stunden" style="display: block; width: 100%; max-width: 720px; height: 130px; background: #FAFAF8; border: 1px solid #EFEEEC; border-radius: 6px">
+                          <line x1="0" y1="32.5" x2="600" y2="32.5" stroke="#EFEEEC" stroke-width="1"></line>
+                          <line x1="0" y1="65" x2="600" y2="65" stroke="#EFEEEC" stroke-width="1"></line>
+                          <line x1="0" y1="97.5" x2="600" y2="97.5" stroke="#EFEEEC" stroke-width="1"></line>
+                          <polyline points="{{g.ramPts}}" fill="none" stroke="#231F20" stroke-width="1.6" vector-effect="non-scaling-stroke"></polyline>
+                          <polyline points="{{g.cpuPts}}" fill="none" stroke="#6FA01F" stroke-width="1.6" vector-effect="non-scaling-stroke"></polyline>
+                        </svg>
+                        <div style="display: flex; justify-content: space-between; max-width: 720px; font-size: 12px; color: #5F5A5B; margin-top: 4px"><span>vor 24 Std.</span><span>vor 12 Std.</span><span>jetzt</span></div>
+                      </div>
+                    </sc-if>
+
+                    <sc-if value="{{g.zeigZustand}}" hint-placeholder-val="{{ false }}">
+                      <div style="padding: 4px 0 12px">
+                        <div style="display: grid; grid-template-columns: repeat(14, 14px); gap: 8px">
+                          <sc-for list="{{g.verlauf}}" as="d" hint-placeholder-count="28">
+                            <span title="{{d.t}}" style="width: 14px; height: 14px; border-radius: 999px; box-sizing: border-box; background: {{d.c}}; border: 1.5px solid {{d.b}}"></span>
+                          </sc-for>
+                        </div>
+                        <div style="font-size: 12px; color: #5F5A5B; margin-top: 8px">12.10.2026 – 08.11.2026 · ein Punkt pro Tag</div>
+                      </div>
+                    </sc-if>
+
+                    <sc-if value="{{g.zeigHardware}}" hint-placeholder-val="{{ false }}">
+                      <div style="display: flex; flex-wrap: wrap; gap: 10px; padding: 4px 0 12px">
+                        <sc-for list="{{g.hw}}" as="h" hint-placeholder-count="4">
+                          <div style="flex: 1 1 200px; max-width: 280px; border: 1px solid {{h.bd}}; background: {{h.bg}}; border-radius: 6px; padding: 10px 12px; font-size: 12px">
+                            <div style="display: flex; justify-content: space-between; gap: 8px">
+                              <span style="font-weight: 600; font-size: 13px">{{h.name}}</span>
+                              <span style="font-weight: 600; color: {{h.fg}}">{{h.status}}</span>
+                            </div>
+                            <div style="color: #5F5A5B">{{h.info}}</div>
+                          </div>
+                        </sc-for>
+                      </div>
+                    </sc-if>
+                  </div>
+
+                </div>
+              </sc-if>
+            </div>
+          </sc-for>
+          <sc-if value="{{mehrGeraete}}" hint-placeholder-val="{{ false }}">
+            <div style="padding: 12px">
+              <button type="button" onClick="{{ladeMehrGeraete}}" style="min-height: 36px; padding: 0 14px; border-radius: 6px; border: none; background: #ECEBE8; color: #231F20; font: inherit; font-size: 13px; font-weight: 500; cursor: pointer">{{mehrGeraeteText}}</button>
+            </div>
+          </sc-if>
+          <sc-if value="{{alleOk}}" hint-placeholder-val="{{ false }}">
+            <div style="padding: 14px 12px; font-size: 13px; color: #1D6B43; font-weight: 500">Alle Geräte ohne Auffälligkeiten.</div>
+          </sc-if>
+          <sc-if value="{{zeigeRest}}" hint-placeholder-val="{{ true }}">
+            <div style="padding: 14px 12px; font-size: 12px; color: #5F5A5B">{{restText}}</div>
+          </sc-if>
+        </div>
+      </div>
+    </section>
+
+    <section style="background: #FFFFFF; border: 1px solid #E4E3E1; border-radius: 8px; padding: 22px 22px 10px">
+      <div style="padding-bottom: 14px">
+        <h2 style="margin: 0; font-size: 18px; font-weight: 700">Tickets</h2>
+        <div style="margin-top: 4px; font-size: 12px; color: #5F5A5B">Aus weclapp · offene Tickets dieses Kunden</div>
+      </div>
+      <div style="overflow-x: auto">
+        <div style="min-width: 620px">
+          <div style="display: grid; grid-template-columns: minmax(0, 2.4fr) 140px 80px minmax(0, 1fr) minmax(0, 1fr) 70px; gap: 16px; padding: 10px 10px; border-bottom: 1px solid #E4E3E1; font-size: 12px; font-weight: 600; letter-spacing: 0.1em; color: #4F4B4C">
+            <span>TICKET</span><span>STATUS</span><span>PRIO</span><span>TECHNIKER</span><span>GERÄT</span><span>ZEIT</span>
+          </div>
+          <sc-for list="{{tickets}}" as="t" hint-placeholder-count="2">
+            <div style="display: grid; grid-template-columns: minmax(0, 2.4fr) 140px 80px minmax(0, 1fr) minmax(0, 1fr) 70px; gap: 16px; align-items: center; padding: 14px 10px; border-bottom: 1px solid #EFEEEC">
+              <span style="display: flex; flex-direction: column; min-width: 0">
+                <span title="{{t.titel}}" style="font-weight: 600; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere">{{t.titel}}</span>
+                <span style="font-size: 12px; color: #5F5A5B">{{t.nr}}</span>
+              </span>
+              <span><span style="font-size: 12px; font-weight: 500; padding: 2px 8px; border-radius: 4px; white-space: nowrap; border: 1px solid {{t.stBd}}; background: {{t.stBg}}; color: {{t.stFg}}">{{t.status}}</span></span>
+              <span style="font-weight: {{t.prioWeight}}; color: {{t.prioFg}}">{{t.prio}}</span>
+              <span style="color: #3F3B3C">{{t.techniker}}</span>
+              <span style="color: #3F3B3C; overflow-wrap: anywhere">{{t.geraetText}}</span>
+              <span style="color: #3F3B3C">{{t.zeit}}</span>
+            </div>
+          </sc-for>
+          <sc-if value="{{keineTickets}}" hint-placeholder-val="{{ false }}">
+            <div style="padding: 14px 10px; font-size: 13px; color: #5F5A5B">Keine offenen Tickets.</div>
+          </sc-if>
+        </div>
+      </div>
+    </section>
+
+    <section style="background: #FFFFFF; border: 1px solid #E4E3E1; border-radius: 8px; padding: 22px">
+      <div style="display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px">
+        <div>
+          <h2 style="margin: 0; font-size: 18px; font-weight: 700">Backups</h2>
+          <div style="margin-top: 4px; font-size: 13px; color: {{bInfoFg}}; font-weight: {{bInfoW}}">{{bInfo}}</div>
+        </div>
+        <sc-if value="{{bUmschaltbar}}" hint-placeholder-val="{{ true }}">
+          <button type="button" onClick="{{bToggle}}" aria-expanded="{{bOffenAttr}}" style="min-height: 36px; padding: 0 14px; border-radius: 6px; border: none; background: #ECEBE8; color: #231F20; font: inherit; font-size: 13px; font-weight: 500; cursor: pointer">{{bToggleText}}</button>
+        </sc-if>
+      </div>
+      <sc-if value="{{bLeer}}" hint-placeholder-val="{{ false }}">
+        <div style="margin-top: 14px; max-width: 420px; border: 1px solid #F5D3A3; background: #FFF6EA; border-radius: 8px; padding: 14px 16px">
+          <div style="font-weight: 700; color: #8A4B00">Kein Backup eingerichtet</div>
+          <div style="font-size: 13px; color: #4F4B4C; margin-top: 4px">Für diesen Kunden ist keine Sicherung hinterlegt. Bitte klären, ob das so gewollt ist.</div>
+        </div>
+      </sc-if>
+      <sc-if value="{{bZeigen}}" hint-placeholder-val="{{ true }}">
+      <div style="display: flex; flex-wrap: wrap; gap: 14px; margin-top: 16px">
+        <sc-for list="{{backups}}" as="b" hint-placeholder-count="2">
+          <div style="flex: 1 1 260px; max-width: 360px; border: 1px solid {{b.bd}}; background: {{b.bg}}; border-radius: 8px; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px">
+            <div style="font-weight: 700; font-size: 14px">{{b.name}}</div>
+            <div style="font-size: 14px; font-weight: 600; color: {{b.fg}}">{{b.statusText}}</div>
+            <div style="font-size: 12px; color: #4F4B4C">{{b.ziel}} · {{b.zuletzt}}</div>
+            <div style="font-size: 12px; color: #4F4B4C">{{b.text}}</div>
+            <div style="display: grid; grid-template-columns: repeat(7, 12px); gap: 10px; margin-top: 6px">
+              <sc-for list="{{b.dots}}" as="d" hint-placeholder-count="28">
+                <span title="{{d.t}}" style="width: 12px; height: 12px; border-radius: 999px; box-sizing: border-box; background: {{d.c}}; border: 1.5px solid {{d.b}}"></span>
+              </sc-for>
+            </div>
+            <div style="font-size: 12px; color: #5F5A5B">12.10.2026 – 08.11.2026</div>
+          </div>
+        </sc-for>
+      </div>
+      </sc-if>
+    </section>
+
+  </div>
+  </sc-if>
+  <sc-if value="{{istTickets}}" hint-placeholder-val="{{ false }}">
+  <div style="display: flex; flex-direction: column; gap: 24px">
+
+    <div style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px">
+      <div style="min-width: 0">
+        <div style="font-size: 12px; font-weight: 600; letter-spacing: 0.14em; color: #5F5A5B">SIT-COCKPIT / TICKETS</div>
+        <h1 style="margin: 8px 0 0; font-size: 28px; font-weight: 700; letter-spacing: -0.01em">Alle Tickets</h1>
+        <div style="margin-top: 4px; font-size: 13px; color: #5F5A5B">Aus weclapp · über alle Kunden</div>
+      </div>
+      <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 10px">
+        <div style="font-size: 12px; font-weight: 500; color: #4D7A12"><span aria-hidden="true" style="display: inline-block; width: 7px; height: 7px; border-radius: 999px; background: #4D7A12; margin-right: 6px; vertical-align: middle"></span>Beispieldaten · Letzte Aktualisierung: vor 2 Min.</div>
+        <button type="button" style="min-height: 36px; padding: 0 14px; border-radius: 6px; border: none; background: {{accent}}; color: #231F20; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer">Neues Ticket</button>
+      </div>
+    </div>
+
+    <section aria-label="Schnellfilter" style="display: flex; flex-wrap: wrap; gap: 18px">
+      <sc-for list="{{tKacheln}}" as="kc" hint-placeholder-count="4">
+        <button type="button" onClick="{{kc.pick}}" aria-pressed="{{kc.aktivAttr}}" style="flex: 1 1 180px; background: #FFFFFF; border: 2px solid {{kc.bd}}; border-radius: 8px; padding: 18px 20px; font: inherit; color: #231F20; text-align: left; cursor: pointer">
+          <span style="display: block; font-size: 13px; color: #4F4B4C">{{kc.label}}</span>
+          <span style="display: block; font-size: 30px; font-weight: 700; margin-top: 8px; color: {{kc.fg}}">{{kc.wert}}</span>
+          <span style="display: block; font-size: 12px; color: #5F5A5B">{{kc.sub}}</span>
+        </button>
+      </sc-for>
+    </section>
+
+    <section style="background: #FFFFFF; border: 1px solid #E4E3E1; border-radius: 8px; padding: 22px 22px 12px">
+      <div style="display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; padding-bottom: 16px">
+        <div style="flex: 2 1 220px; display: flex; flex-direction: column; gap: 4px">
+          <label for="tsuche" style="font-size: 12px; font-weight: 600; letter-spacing: 0.1em; color: #4F4B4C">SUCHE</label>
+          <input id="tsuche" type="search" placeholder="Titel, Nummer oder Gerät" value="{{f.query}}" onChange="{{f.onQuery}}" style="height: 40px; padding: 0 12px; border: 1px solid #D5D3D0; border-radius: 6px; font: inherit; font-size: 13px; color: #231F20; background: #FFFFFF; box-sizing: border-box; width: 100%">
+        </div>
+        <div style="flex: 1 1 150px; display: flex; flex-direction: column; gap: 4px">
+          <label for="tstatus" style="font-size: 12px; font-weight: 600; letter-spacing: 0.1em; color: #4F4B4C">STATUS</label>
+          <select id="tstatus" value="{{f.status}}" onChange="{{f.onStatus}}" style="height: 40px; padding: 0 10px; border: 1px solid #D5D3D0; border-radius: 6px; font: inherit; font-size: 13px; color: #231F20; background: #FFFFFF">
+            <sc-for list="{{f.statusOpt}}" as="o" hint-placeholder-count="6"><option value="{{o.v}}">{{o.l}}</option></sc-for>
+          </select>
+        </div>
+        <div style="flex: 1 1 170px; display: flex; flex-direction: column; gap: 4px">
+          <label for="tkunde" style="font-size: 12px; font-weight: 600; letter-spacing: 0.1em; color: #4F4B4C">KUNDE</label>
+          <select id="tkunde" value="{{f.kunde}}" onChange="{{f.onKunde}}" style="height: 40px; padding: 0 10px; border: 1px solid #D5D3D0; border-radius: 6px; font: inherit; font-size: 13px; color: #231F20; background: #FFFFFF">
+            <sc-for list="{{f.kundeOpt}}" as="o" hint-placeholder-count="6"><option value="{{o.v}}">{{o.l}}</option></sc-for>
+          </select>
+        </div>
+        <div style="flex: 1 1 150px; display: flex; flex-direction: column; gap: 4px">
+          <label for="ttech" style="font-size: 12px; font-weight: 600; letter-spacing: 0.1em; color: #4F4B4C">TECHNIKER</label>
+          <select id="ttech" value="{{f.tech}}" onChange="{{f.onTech}}" style="height: 40px; padding: 0 10px; border: 1px solid #D5D3D0; border-radius: 6px; font: inherit; font-size: 13px; color: #231F20; background: #FFFFFF">
+            <sc-for list="{{f.techOpt}}" as="o" hint-placeholder-count="4"><option value="{{o.v}}">{{o.l}}</option></sc-for>
+          </select>
+        </div>
+        <div style="flex: 1 1 120px; display: flex; flex-direction: column; gap: 4px">
+          <label for="tprio" style="font-size: 12px; font-weight: 600; letter-spacing: 0.1em; color: #4F4B4C">PRIORITÄT</label>
+          <select id="tprio" value="{{f.prio}}" onChange="{{f.onPrio}}" style="height: 40px; padding: 0 10px; border: 1px solid #D5D3D0; border-radius: 6px; font: inherit; font-size: 13px; color: #231F20; background: #FFFFFF">
+            <sc-for list="{{f.prioOpt}}" as="o" hint-placeholder-count="4"><option value="{{o.v}}">{{o.l}}</option></sc-for>
+          </select>
+        </div>
+        <button type="button" onClick="{{f.reset}}" style="min-height: 40px; padding: 0 14px; border-radius: 6px; border: none; background: #ECEBE8; color: #231F20; font: inherit; font-size: 13px; font-weight: 500; cursor: pointer">Zurücksetzen</button>
+      </div>
+      <div style="font-size: 12px; color: #5F5A5B; padding-bottom: 10px">{{f.trefferText}} · sortiert nach Priorität und Alter · Zeile anklicken für Details</div>
+
+      <div style="overflow-x: auto">
+        <div style="min-width: 820px">
+          <div style="display: grid; grid-template-columns: minmax(0, 2.3fr) minmax(0, 1.3fr) 140px 80px minmax(0, 1fr) 90px 70px; gap: 16px; padding: 10px 12px; border-bottom: 1px solid #E4E3E1; font-size: 12px; font-weight: 600; letter-spacing: 0.1em; color: #4F4B4C">
+            <span>TICKET</span><span>KUNDE</span><span>STATUS</span><span>PRIO</span><span>TECHNIKER</span><span>ALTER</span><span>ZEIT</span>
+          </div>
+          <sc-for list="{{alleTickets}}" as="t" hint-placeholder-count="6">
+            <div style="border-bottom: 1px solid #EFEEEC">
+              <button type="button" onClick="{{t.toggle}}" aria-expanded="{{t.offenAttr}}" style="display: grid; grid-template-columns: minmax(0, 2.3fr) minmax(0, 1.3fr) 140px 80px minmax(0, 1fr) 90px 70px; gap: 16px; align-items: center; width: 100%; padding: 13px 12px; border: none; background: {{t.rowBg}}; color: #231F20; font: inherit; font-size: 14px; text-align: left; cursor: pointer">
+                <span style="display: flex; align-items: center; gap: 10px; min-width: 0">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#5F5A5B" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; transform: rotate({{t.rot}}deg)"><path d="M9 6l6 6-6 6"></path></svg>
+                  <span style="display: flex; flex-direction: column; min-width: 0">
+                    <span title="{{t.titel}}" style="font-weight: 600; color: {{t.titelFg}}; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere">{{t.titel}}</span>
+                    <span style="font-size: 12px; color: #5F5A5B">{{t.nr}}</span>
+                  </span>
+                </span>
+                <span style="color: #3F3B3C">{{t.kunde}}</span>
+                <span><span style="font-size: 12px; font-weight: 500; padding: 2px 8px; border-radius: 4px; white-space: nowrap; border: 1px solid {{t.stBd}}; background: {{t.stBg}}; color: {{t.stFg}}">{{t.status}}</span></span>
+                <span style="font-weight: {{t.prioWeight}}; color: {{t.prioFg}}">{{t.prio}}</span>
+                <span style="color: {{t.techFg}}; overflow-wrap: anywhere">{{t.techniker}}</span>
+                <span style="color: #3F3B3C">{{t.alter}}</span>
+                <span style="color: #3F3B3C">{{t.zeit}}</span>
+              </button>
+              <sc-if value="{{t.offen}}" hint-placeholder-val="{{ false }}">
+                <div style="padding: 2px 12px 20px 34px; display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start">
+                  <div style="flex: 2 1 320px; min-width: 0">
+                    <div style="font-size: 12px; font-weight: 600; letter-spacing: 0.1em; color: #4F4B4C; margin-bottom: 6px">BESCHREIBUNG</div>
+                    <div style="font-size: 14px; color: {{t.beschrFg}}; max-width: 70ch">{{t.beschreibungText}}</div>
+                    <div style="font-size: 12px; color: #5F5A5B; margin-top: 8px">Erstellt am {{t.erstellt}}</div>
+                  </div>
+                  <div style="flex: 1 1 220px; min-width: 0">
+                    <div style="font-size: 12px; font-weight: 600; letter-spacing: 0.1em; color: #4F4B4C; margin-bottom: 6px">BETROFFENES GERÄT</div>
+                    <sc-if value="{{t.hatGeraet}}" hint-placeholder-val="{{ true }}">
+                      <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap">
+                        <span style="font-weight: 600; overflow-wrap: anywhere">{{t.geraet}}</span>
+                        <span style="font-size: 12px; font-weight: 500; padding: 2px 8px; border-radius: 4px; background: {{t.gBg}}; color: {{t.gFg}}">{{t.gLabel}}</span>
+                      </div>
+                      <div style="font-size: 12px; color: #5F5A5B; margin-top: 4px">{{t.gHinweis}}</div>
+                    </sc-if>
+                    <sc-if value="{{t.geraetFehlt}}" hint-placeholder-val="{{ false }}">
+                      <div style="font-weight: 600; overflow-wrap: anywhere">{{t.geraet}}</div>
+                      <div style="font-size: 12px; color: #8A4B00; margin-top: 4px">In Atera nicht mehr vorhanden – Gerät wurde entfernt oder umbenannt.</div>
+                    </sc-if>
+                    <sc-if value="{{t.ohneGeraet}}" hint-placeholder-val="{{ false }}">
+                      <div style="font-size: 13px; color: #5F5A5B">Kein Gerät verknüpft</div>
+                    </sc-if>
+                  </div>
+                  <div style="flex: 1 1 100%; max-width: 760px; border-top: 1px solid #EFEEEC; padding-top: 16px; display: flex; flex-direction: column; gap: 10px">
+                    <div style="font-size: 12px; font-weight: 600; letter-spacing: 0.1em; color: #4F4B4C">ARBEITSBERICHT FÜR DEN KUNDEN</div>
+                    <label for="notiz-{{t.nr}}" style="font-size: 13px; color: #3F3B3C">Deine Stichwörter: Was hast du gemacht?</label>
+                    <textarea id="notiz-{{t.nr}}" rows="3" placeholder="z. B. temp. Dateien + alte Updates gelöscht, 38 GB frei, Warnschwelle auf 85 % gesetzt" value="{{t.notiz}}" onChange="{{t.onNotiz}}" style="width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1px solid #D5D3D0; border-radius: 6px; font: inherit; font-size: 14px; line-height: 1.5; color: #231F20; background: #FFFFFF; resize: vertical"></textarea>
+                    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px">
+                      <button type="button" onClick="{{t.kiVorschlag}}" style="display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 14px; border-radius: 6px; border: none; background: {{accent}}; color: #231F20; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z"></path><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"></path></svg>
+                        {{t.kiButton}}
+                      </button>
+                      <sc-if value="{{t.kiLaedt}}" hint-placeholder-val="{{ false }}">
+                        <span role="status" style="font-size: 13px; color: #5F5A5B">Text wird formuliert …</span>
+                      </sc-if>
+                    </div>
+                    <sc-if value="{{t.kiFehlerDa}}" hint-placeholder-val="{{ false }}">
+                      <div role="alert" style="font-size: 13px; color: #8A4B00; background: #FFF6EA; border: 1px solid #F5D3A3; border-radius: 6px; padding: 8px 12px">{{t.kiFehler}}</div>
+                    </sc-if>
+                    <sc-if value="{{t.kiTextDa}}" hint-placeholder-val="{{ false }}">
+                      <label for="ki-{{t.nr}}" style="font-size: 13px; color: #3F3B3C">Vorschlag für den Kunden – du kannst ihn direkt bearbeiten</label>
+                      <textarea id="ki-{{t.nr}}" rows="5" value="{{t.kiText}}" onChange="{{t.onKiText}}" style="width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1px solid #D5D3D0; border-radius: 6px; font: inherit; font-size: 14px; line-height: 1.5; color: #231F20; background: #FFFFFF; resize: vertical; background: #FAFAF8"></textarea>
+                      <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px">
+                        <button type="button" onClick="{{t.kiUebernehmen}}" style="min-height: 36px; padding: 0 14px; border-radius: 6px; border: none; background: {{accent}}; color: #231F20; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer">Übernehmen</button>
+                        <button type="button" onClick="{{t.kiKuerzer}}" style="min-height: 36px; padding: 0 14px; border-radius: 6px; border: none; background: #ECEBE8; color: #231F20; font: inherit; font-size: 13px; font-weight: 500; cursor: pointer">Kürzer fassen</button>
+                        <sc-if value="{{t.kiUebernommen}}" hint-placeholder-val="{{ false }}">
+                          <span role="status" style="font-size: 13px; color: #3F6410; font-weight: 500">Übernommen – im echten Cockpit landet der Text als Arbeitsbericht im weclapp-Ticket.</span>
+                        </sc-if>
+                      </div>
+                    </sc-if>
+                  </div>
+                  <div style="flex: 1 1 100%; max-width: 760px; border-top: 1px solid #EFEEEC; padding-top: 16px; display: flex; flex-direction: column; gap: 10px">
+                    <div style="font-size: 12px; font-weight: 600; letter-spacing: 0.1em; color: #4F4B4C">FOTOS ZUR DOKUMENTATION</div>
+                    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px">
+                      <input id="foto-{{t.nr}}" type="file" accept="image/*" capture="environment" multiple="multiple" onChange="{{t.onFotos}}" style="position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden">
+                      <label for="foto-{{t.nr}}" style="display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 14px; border-radius: 6px; border: 1px dashed #B5B1B2; background: #FFFFFF; color: #231F20; font-size: 13px; font-weight: 500; cursor: pointer">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"></path><circle cx="12" cy="13" r="3.5"></circle></svg>
+                        Foto aufnehmen oder auswählen
+                      </label>
+                      <span style="font-size: 13px; color: #5F5A5B">{{t.fotoInfo}}</span>
+                    </div>
+                    <sc-if value="{{t.hatFotos}}" hint-placeholder-val="{{ false }}">
+                      <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px">
+                        <sc-for list="{{t.fotos}}" as="f" hint-placeholder-count="2">
+                          <div style="border: 1px solid #E4E3E1; border-radius: 6px; overflow: hidden; background: #FFFFFF; display: flex; flex-direction: column">
+                            <img src="{{f.url}}" alt="{{f.alt}}" style="display: block; width: 100%; height: 110px; object-fit: cover; background: #EFEEEC">
+                            <div style="padding: 8px 10px; display: flex; flex-direction: column; gap: 6px">
+                              <label for="fb-{{f.id}}" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Beschreibung zu {{f.name}}</label>
+                              <input id="fb-{{f.id}}" type="text" placeholder="Beschreibung, z. B. Typenschild" value="{{f.text}}" onChange="{{f.onText}}" style="width: 100%; box-sizing: border-box; height: 34px; padding: 0 8px; border: 1px solid #D5D3D0; border-radius: 4px; font: inherit; font-size: 12px; color: #231F20">
+                              <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 12px">
+                                <span style="color: {{f.stFg}}; font-weight: {{f.stW}}">{{f.status}}</span>
+                                <button type="button" onClick="{{f.entfernen}}" aria-label="Foto {{f.name}} entfernen" style="min-height: 28px; padding: 0 8px; border-radius: 4px; border: none; background: #ECEBE8; color: #231F20; font: inherit; font-size: 12px; cursor: pointer">Entfernen</button>
+                              </div>
+                            </div>
+                          </div>
+                        </sc-for>
+                      </div>
+                      <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px">
+                        <button type="button" onClick="{{t.fotosHochladen}}" style="min-height: 36px; padding: 0 14px; border-radius: 6px; border: none; background: {{accent}}; color: #231F20; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer">{{t.uploadText}}</button>
+                        <sc-if value="{{t.fotosFertig}}" hint-placeholder-val="{{ false }}">
+                          <span role="status" style="font-size: 13px; color: #3F6410; font-weight: 500">Im echten Cockpit hängen die Fotos jetzt als Dokumente am weclapp-Ticket. Im Entwurf wird nichts übertragen.</span>
+                        </sc-if>
+                      </div>
+                    </sc-if>
+                  </div>
+                  <div style="flex: 1 1 100%; display: flex; flex-wrap: wrap; gap: 8px">
+                    <button type="button" style="min-height: 36px; padding: 0 14px; border-radius: 6px; border: none; background: #ECEBE8; color: #231F20; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer">Zeit buchen</button>
+                    <button type="button" style="min-height: 36px; padding: 0 14px; border-radius: 6px; border: none; background: #ECEBE8; color: #231F20; font: inherit; font-size: 13px; font-weight: 500; cursor: pointer">In weclapp öffnen</button>
+                    <button type="button" onClick="{{t.zumKunden}}" style="min-height: 36px; padding: 0 14px; border-radius: 6px; border: none; background: #ECEBE8; color: #231F20; font: inherit; font-size: 13px; font-weight: 500; cursor: pointer">Zum Kunden</button>
+                  </div>
+                </div>
+              </sc-if>
+            </div>
+          </sc-for>
+          <sc-if value="{{mehrTickets}}" hint-placeholder-val="{{ false }}">
+            <div style="padding: 12px">
+              <button type="button" onClick="{{ladeMehrTickets}}" style="min-height: 36px; padding: 0 14px; border-radius: 6px; border: none; background: #ECEBE8; color: #231F20; font: inherit; font-size: 13px; font-weight: 500; cursor: pointer">{{mehrTicketsText}}</button>
+            </div>
+          </sc-if>
+          <sc-if value="{{keineTrefferT}}" hint-placeholder-val="{{ false }}">
+            <div style="padding: 18px 12px; font-size: 13px; color: #5F5A5B">Keine Tickets für diese Filter.</div>
+          </sc-if>
+        </div>
+      </div>
+    </section>
+
+  </div>
+  </sc-if>
+
+  </main>
+  <div role="group" aria-label="Testdaten" style="position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 50; display: flex; gap: 2px; padding: 3px; background: #E5E5E5; border-radius: 999px; font-family: system-ui, sans-serif; font-size: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.15)">
+    <sc-for list="{{dsOpt}}" as="o" hint-placeholder-count="3">
+      <button type="button" onClick="{{o.pick}}" aria-pressed="{{o.aktivAttr}}" style="min-height: 30px; padding: 0 12px; border: none; border-radius: 999px; background: {{o.bg}}; color: #222222; font: inherit; font-weight: {{o.fw}}; cursor: pointer">{{o.l}}</button>
+    </sc-for>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#99CC33","options":["#99CC33","#231F20"]},"$preview":{"width":1440,"height":1600}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { sel: 'k1', query: '', showAll: false, offen: 'SRV-HOFER-01' };
+  }
+
+  rnd(seedStr) {
+    let h = 2166136261;
+    for (let i = 0; i < seedStr.length; i++) { h ^= seedStr.charCodeAt(i); h = Math.imul(h, 16777619); }
+    return () => { h ^= h << 13; h ^= h >>> 17; h ^= h << 5; return ((h >>> 0) % 10000) / 10000; };
+  }
+
+  daten() {
+    const ds = (this.state && this.state.ds) || 'demo';
+    if (ds === 'worst') return this.datenWorst();
+    if (ds === 'eins') return this.datenEins();
+    if (ds === 'leer') return [];
+    return this.datenDemo();
+  }
+
+  datenWorst() {
+    const geraete = [];
+    for (let i = 1; i <= 200; i++) {
+      const nr = String(i).padStart(3, '0');
+      let typ = i % 20 === 0 ? 'Server' : (i % 3 === 0 ? 'Laptop' : 'Arbeitsplatz');
+      let name = (typ === 'Server' ? 'SRV-' : (typ === 'Laptop' ? 'LP-' : 'PC-')) + nr;
+      if (i === 7) { name = 'SRV-HV-CLUSTER-KNOTEN-02.hinterberger-steuerberatung.local'; typ = 'Server'; }
+      let sev = 'ok', problem = '';
+      if (i === 3) { sev = 'crit'; problem = 'Laufwerk D: (Daten) zu 97 % belegt – nur noch 12,4 GB frei, Schattenkopien belegen 180 GB'; }
+      if (i === 7) { sev = 'crit'; problem = 'RAID 10: zwei Datenträger melden Lesefehler'; }
+      if (i === 141) { sev = 'crit'; problem = 'Dienst „Veeam Backup Service“ gestoppt'; }
+      if (sev === 'ok' && i % 17 === 0) { sev = 'warn'; problem = (i % 34 === 0 ? 132 : 9) + ' Updates ausstehend'; }
+      const online = !(i % 13 === 0);
+      geraete.push({ name, typ, online, zuletzt: online ? 'vor 1 Min.' : 'vor 47 Tagen', sev, problem, lw: i === 3 ? [['C:', 71], ['D:', 97], ['E:', 88], ['F:', 12], ['G:', 100]] : undefined, ramGb: typ === 'Server' ? 512 : 8 });
+    }
+    const T = (nr, titel, status, prio, techniker, zeit, geraet) => ({ nr, titel, status, prio, techniker, zeit, geraet });
+    const tickets = [
+      T('T-102481', 'Nach dem Update auf Windows 11 24H2 können sich mehrere Benutzer der Buchhaltung nicht mehr am Terminalserver anmelden, Fehlermeldung „Der Remotedesktop-Sitzungshost ist nicht verfügbar“ – dringend, Monatsabschluss!', 'Offen', 'Hoch', 'nicht zugewiesen', '0:00 h', 'SRV-HV-CLUSTER-KNOTEN-02.hinterberger-steuerberatung.local'),
+      T('T-102480', 'Drucker', 'In Arbeit', 'Normal', 'Aleksandra Wiśniewska-Kowalczyk', '124:30 h', 'PC-GELOESCHT-01'),
+      T('T-102479', 'Postfach-Migration aller 85 Benutzer nach Exchange Online inkl. freigegebener Postfächer und Verteilerlisten', 'Wartet auf Kunde', 'Niedrig', 'S. Berger', '37:15 h', '')
+    ];
+    for (let i = 0; i < 37; i++) tickets.push(T('T-1024' + (40 + i), 'Benutzer kann sich nicht anmelden (' + (i + 1) + ')', i % 3 === 0 ? 'In Arbeit' : 'Offen', i % 5 === 0 ? 'Hoch' : 'Normal', i % 4 === 0 ? 'nicht zugewiesen' : 'A. Köhler', '0:15 h', ''));
+    const backups = [];
+    ['Server-Backup SRV-020', 'Server-Backup SRV-040', 'Exchange Online', 'SharePoint & OneDrive', 'Hyper-V Replikation Standort Wiener Neustadt', 'NAS Offsite-Kopie'].forEach((n, i) => {
+      backups.push({ name: n, ziel: i === 4 ? 'Rechenzentrum Wiener Neustadt (Replikationsziel 2)' : 'Backup-NAS', zuletzt: '8.11.2026, 0' + i + ':00', sev: i === 2 ? 'crit' : 'ok', text: i === 2 ? 'Letzter Lauf fehlgeschlagen: Token abgelaufen, erneute Anmeldung beim Microsoft-Konto erforderlich.' : 'Die letzten 3 Läufe waren erfolgreich.', schlecht: i === 2 ? [[0, 'crit'], [1, 'crit'], [2, 'crit']] : [] });
+    });
+    const offline = [];
+    ['SRV-01', 'FW-01', 'PC-01', 'PC-02', 'PC-03', 'PC-04', 'PC-05', 'PC-06', 'LP-01', 'LP-02', 'NAS-01', 'PC-07'].forEach((n) => offline.push({ name: n, typ: n.startsWith('SRV') ? 'Server' : (n.startsWith('FW') ? 'Firewall' : (n.startsWith('LP') ? 'Laptop' : 'Arbeitsplatz')), online: false, zuletzt: 'vor 2 Std.', sev: 'ok', problem: '' }));
+    return [
+      { id: 'w1', name: 'Österreichische Gesellschaft für Wirtschaftsprüfung Dr. Hinterberger-Schwarzenbacher & Partner KG', nr: 'KD-1000045123', kontakt: '', zeit: '124:30 h', geraete, tickets, backups },
+      { id: 'w2', name: 'B&K', nr: 'KD-1', kontakt: 'Jo', zeit: '0:00 h', geraete: offline, tickets: [], backups: [] },
+      { id: 'w3', name: 'Gärtnerei Ünal-Öztürk', nr: 'KD-10200', kontakt: 'Ayşe Ünal-Öztürk', zeit: '0:45 h',
+        geraete: [{ name: 'PC-01', typ: 'Arbeitsplatz', online: true, zuletzt: 'vor 1 Min.', sev: 'warn', problem: '1 Update ausstehend' }],
+        tickets: [T('T-10201', 'PC startet langsam', 'Offen', 'Normal', 'A. Köhler', '0:45 h', 'PC-01')],
+        backups: [{ name: 'Microsoft 365', ziel: 'Cloud-Speicher', zuletzt: '7.11.2026, 22:00', sev: 'ok', text: 'Die letzten 3 Läufe waren erfolgreich.', schlecht: [] }] }
+    ];
+  }
+
+  datenEins() {
+    return [{ id: 'e1', name: 'Einzelkunde GmbH', nr: 'KD-1', kontakt: 'Max Muster', zeit: '0:15 h',
+      geraete: [{ name: 'PC-01', typ: 'Arbeitsplatz', online: true, zuletzt: 'vor 1 Min.', sev: 'warn', problem: '1 Updates ausstehend' }],
+      tickets: [{ nr: 'T-1', titel: 'Erstes Ticket', status: 'Offen', prio: 'Normal', techniker: 'A. Köhler', zeit: '0:15 h', geraet: 'PC-01' }],
+      backups: [{ name: 'Server-Backup', ziel: 'NAS', zuletzt: '8.11.2026, 02:00', sev: 'warn', text: '1 Lauf mit Warnung.', schlecht: [[0, 'warn']] }] }];
+  }
+
+  datenDemo() {
+    const g = (name, typ, online, zuletzt, sev, problem, extra) => Object.assign({ name, typ, online, zuletzt, sev, problem: problem || '' }, extra || {});
+    const B = (name, ziel, zuletzt, sev, text, schlecht) => ({ name, ziel, zuletzt, sev, text, schlecht: schlecht || [] });
+    return [
+      { id: 'k1', name: 'Bäckerei Hofer GmbH', nr: 'KD-10012', kontakt: 'Maria Hofer', zeit: '3:45 h',
+        geraete: [
+          g('SRV-HOFER-01', 'Server', true, 'vor 1 Min.', 'crit', 'Laufwerk C: zu 94 % belegt', { lw: [['C:', 94], ['D:', 61]], ramGb: 32,
+            hw: [['RAID 1 · Controller', 'OK', 'Smart Array, Cache OK'], ['Datenträger 1', 'OK', 'SSD 960 GB · 41 °C'], ['Datenträger 2', 'OK', 'SSD 960 GB · 42 °C'], ['Netzteil 1 + 2', 'OK', '500 W · redundant']] }),
+          g('KASSE-01', 'Arbeitsplatz', true, 'vor 1 Min.', 'warn', '6 Updates ausstehend'),
+          g('FW-HOFER', 'Firewall', true, 'vor 1 Min.', 'ok'),
+          g('KASSE-02', 'Arbeitsplatz', true, 'vor 2 Min.', 'ok'),
+          g('BUERO-PC-01', 'Arbeitsplatz', true, 'vor 1 Min.', 'ok'),
+          g('BUERO-PC-02', 'Arbeitsplatz', false, 'vor 3 Std.', 'ok'),
+          g('LP-MHOFER', 'Laptop', true, 'vor 5 Min.', 'ok'),
+          g('NAS-HOFER', 'Speicher', true, 'vor 1 Min.', 'ok', '', { lw: [['Vol1', 58]] })
+        ],
+        tickets: [
+          { nr: 'T-2481', titel: 'Serverplatte fast voll – Bereinigung', status: 'In Arbeit', prio: 'Hoch', techniker: 'S. Berger', zeit: '0:45 h', geraet: 'SRV-HOFER-01' },
+          { nr: 'T-2477', titel: 'Bondrucker an Kasse 2 druckt nicht', status: 'Offen', prio: 'Normal', techniker: 'nicht zugewiesen', zeit: '0:00 h', geraet: 'KASSE-02' }
+        ],
+        backups: [ B('Server-Backup SRV-HOFER-01', 'NAS-HOFER', '8.11.2026, 02:00', 'ok', 'Die letzten 3 Läufe waren erfolgreich.', [[5, 'warn']]),
+                   B('Microsoft 365', 'Cloud-Speicher', '7.11.2026, 22:20', 'ok', 'Die letzten 3 Läufe waren erfolgreich.') ] },
+      { id: 'k2', name: 'Kanzlei Lindner & Partner', nr: 'KD-10045', kontakt: 'Dr. Thomas Lindner', zeit: '6:10 h',
+        geraete: [
+          g('SRV-LINDNER-01', 'Server', true, 'vor 1 Min.', 'crit', 'RAID 5: Datenträger 2 kritisch', { lw: [['C:', 48], ['D:', 72], ['E:', 39]], ramGb: 64,
+            hw: [['RAID 5 · Controller', 'Warnung', 'Array beeinträchtigt'], ['Datenträger 1', 'OK', 'HDD 4 TB · 38 °C'], ['Datenträger 2', 'Kritisch', 'HDD 4 TB · 112 Lesefehler, SMART meldet Ausfall'], ['Datenträger 3', 'OK', 'HDD 4 TB · 39 °C'], ['Datenträger 4', 'OK', 'HDD 4 TB · 37 °C']] }),
+          g('LP-SEKRETARIAT', 'Laptop', false, 'vor 9 Tagen', 'warn', 'Seit 9 Tagen offline'),
+          g('FW-LINDNER', 'Firewall', true, 'vor 1 Min.', 'ok'),
+          g('PC-LINDNER-01', 'Arbeitsplatz', true, 'vor 2 Min.', 'ok'),
+          g('PC-LINDNER-02', 'Arbeitsplatz', true, 'vor 1 Min.', 'ok'),
+          g('PC-LINDNER-03', 'Arbeitsplatz', true, 'vor 4 Min.', 'ok'),
+          g('PC-LINDNER-04', 'Arbeitsplatz', true, 'vor 1 Min.', 'ok')
+        ],
+        tickets: [
+          { nr: 'T-2470', titel: 'Neue Mitarbeiterin: Konto und Laptop einrichten', status: 'Wartet auf Kunde', prio: 'Normal', techniker: 'A. Köhler', zeit: '1:30 h', geraet: '' }
+        ],
+        backups: [ B('Server-Backup SRV-LINDNER-01', 'Backup-NAS', '8.11.2026, 01:30', 'warn', 'Letzter Lauf mit Warnungen abgeschlossen.', [[0, 'warn'], [1, 'warn']]),
+                   B('Microsoft 365', 'Cloud-Speicher', '7.11.2026, 23:05', 'ok', 'Die letzten 3 Läufe waren erfolgreich.') ] },
+      { id: 'k3', name: 'Autohaus Weber', nr: 'KD-10078', kontakt: 'Jürgen Weber', zeit: '9:20 h',
+        geraete: [
+          g('SRV-WEBER-01', 'Server', true, 'vor 1 Min.', 'ok', '', { lw: [['C:', 52], ['D:', 44]], ramGb: 64,
+            hw: [['RAID 1 · Controller', 'OK', 'Cache OK'], ['Datenträger 1', 'OK', 'SSD 1,9 TB · 36 °C'], ['Datenträger 2', 'OK', 'SSD 1,9 TB · 37 °C']] }),
+          g('SRV-WEBER-02', 'Server', true, 'vor 1 Min.', 'ok', '', { lw: [['C:', 38]], ramGb: 32 }),
+          g('FW-WEBER', 'Firewall', true, 'vor 1 Min.', 'ok'),
+          g('PC-VERKAUF-01', 'Arbeitsplatz', true, 'vor 3 Min.', 'ok'),
+          g('PC-VERKAUF-02', 'Arbeitsplatz', true, 'vor 1 Min.', 'ok'),
+          g('PC-WERKSTATT-01', 'Arbeitsplatz', true, 'vor 2 Min.', 'ok'),
+          g('LP-WEBER-GF', 'Laptop', true, 'vor 12 Min.', 'ok')
+        ],
+        tickets: [
+          { nr: 'T-2465', titel: 'VPN für Außendienst einrichten', status: 'In Arbeit', prio: 'Normal', techniker: 'S. Berger', zeit: '2:15 h', geraet: '' },
+          { nr: 'T-2479', titel: 'Outlook-Postfach voll', status: 'Offen', prio: 'Niedrig', techniker: 'nicht zugewiesen', zeit: '0:00 h', geraet: 'PC-VERKAUF-02' }
+        ],
+        backups: [ B('Server-Backup SRV-WEBER-01', 'Backup-NAS', '8.11.2026, 02:10', 'ok', 'Die letzten 3 Läufe waren erfolgreich.'),
+                   B('Microsoft 365', 'Cloud-Speicher', '7.11.2026, 22:40', 'ok', 'Die letzten 3 Läufe waren erfolgreich.', [[11, 'warn']]) ] },
+      { id: 'k4', name: 'Praxis Dr. Moser', nr: 'KD-10103', kontakt: 'Dr. Eva Moser', zeit: '1:00 h',
+        geraete: [
+          g('PC-EMPFANG', 'Arbeitsplatz', true, 'vor 1 Min.', 'warn', '11 Updates ausstehend'),
+          g('PC-BEHANDLUNG-1', 'Arbeitsplatz', true, 'vor 2 Min.', 'warn', 'Virenschutz-Definitionen veraltet'),
+          g('PC-BEHANDLUNG-2', 'Arbeitsplatz', true, 'vor 1 Min.', 'ok'),
+          g('SRV-MOSER', 'Server', true, 'vor 1 Min.', 'ok', '', { lw: [['C:', 57], ['D:', 66]], ramGb: 16 }),
+          g('FW-MOSER', 'Firewall', true, 'vor 1 Min.', 'ok')
+        ],
+        tickets: [],
+        backups: [ B('Server-Backup SRV-MOSER', 'USB-Festplatte', '8.11.2026, 03:00', 'crit', 'Letzter Lauf fehlgeschlagen: Ziel nicht erreichbar.', [[0, 'crit'], [1, 'crit']]) ] },
+      { id: 'k5', name: 'Steuerbüro Gruber', nr: 'KD-10131', kontakt: 'Petra Gruber', zeit: '2:30 h',
+        geraete: [
+          g('SRV-GRUBER', 'Server', true, 'vor 1 Min.', 'ok', '', { lw: [['C:', 41], ['D:', 55]], ramGb: 32 }),
+          g('PC-GRUBER-01', 'Arbeitsplatz', true, 'vor 1 Min.', 'ok'),
+          g('PC-GRUBER-02', 'Arbeitsplatz', true, 'vor 2 Min.', 'ok'),
+          g('PC-GRUBER-03', 'Arbeitsplatz', false, 'vor 1 Std.', 'ok'),
+          g('LP-PGRUBER', 'Laptop', true, 'vor 8 Min.', 'ok')
+        ],
+        tickets: [
+          { nr: 'T-2474', titel: 'Scanner-Freigabe neu einrichten', status: 'Offen', prio: 'Normal', techniker: 'A. Köhler', zeit: '0:20 h', geraet: '' }
+        ],
+        backups: [ B('Server-Backup SRV-GRUBER', 'Backup-NAS', '8.11.2026, 01:45', 'ok', 'Die letzten 3 Läufe waren erfolgreich.') ] }
+    ];
+  }
+
+  ticketInfo() {
+    return {
+      'T-2481': ['7.11.2026', 26, 'Laufwerk C: läuft voll. Temporäre Dateien und alte Update-Reste bereinigen, ggf. Partition erweitern.'],
+      'T-2477': ['8.11.2026', 6, 'Bondrucker an Kasse 2 reagiert nicht. Kunde hat das Gerät bereits neu gestartet.'],
+      'T-2470': ['4.11.2026', 110, 'Neue Mitarbeiterin ab 15.11.: Benutzerkonto, Postfach und Laptop vorbereiten. Freigabe der Hardware-Bestellung ausständig.'],
+      'T-2465': ['3.11.2026', 130, 'VPN-Zugang für drei Außendienst-Mitarbeiter einrichten und testen.'],
+      'T-2479': ['7.11.2026', 30, 'Postfach von Verkauf 2 ist voll, Archivierung einrichten.'],
+      'T-2474': ['6.11.2026', 50, 'Scan-to-Folder am Multifunktionsgerät funktioniert nach Passwortänderung nicht mehr.'],
+      'T-2483': ['8.11.2026', 3, 'SMART meldet Ausfall von Datenträger 2 im RAID 5. Ersatzplatte bestellt, Tausch vor Ort einplanen.'],
+      'T-2484': ['8.11.2026', 5, 'Sicherungsziel seit zwei Tagen nicht erreichbar. Prüfen, ob die USB-Festplatte angeschlossen ist.'],
+      'T-2482': ['8.11.2026', 8, 'Neuen Arbeitsplatz in der Werkstatt aufsetzen. Warten auf Lieferung des PCs.'],
+      'T-2468': ['2.11.2026', 160, 'Monatliche Windows-Updates auf den Praxis-PCs eingespielt.'],
+      'T-2460': ['30.10.2026', 220, 'Druckertreiber auf allen Arbeitsplätzen aktualisiert.'],
+      'T-102481': ['8.11.2026', 1, 'Seit dem Update in der Nacht melden 14 Benutzer der Buchhaltung, dass die Anmeldung am Terminalserver mit der Meldung „Der Remotedesktop-Sitzungshost ist nicht verfügbar“ abbricht. Betroffen sind alle Sitzungen auf Knoten 02, Knoten 01 funktioniert. Kunde braucht das System dringend für den Monatsabschluss, Rückruf an die Geschäftsführung erbeten unter der Durchwahl 0664 1234567 89.'],
+      'T-102480': ['14.3.2025', 5760, 'Drucker.']
+    };
+  }
+
+  zusatzTickets() {
+    if (((this.state && this.state.ds) || 'demo') !== 'demo') return {};
+    return {
+      k2: [{ nr: 'T-2483', titel: 'Datenträger 2 im RAID 5 tauschen', status: 'In Arbeit', prio: 'Hoch', techniker: 'S. Berger', zeit: '0:30 h', geraet: 'SRV-LINDNER-01' }],
+      k3: [{ nr: 'T-2482', titel: 'Neuer Arbeitsplatz Werkstatt', status: 'Wartet auf Kunde', prio: 'Normal', techniker: 'S. Berger', zeit: '0:15 h', geraet: '' }],
+      k4: [{ nr: 'T-2484', titel: 'Backup auf USB-Festplatte schlägt fehl', status: 'Offen', prio: 'Hoch', techniker: 'nicht zugewiesen', zeit: '0:00 h', geraet: 'SRV-MOSER' },
+           { nr: 'T-2468', titel: 'Windows-Updates auf Praxis-PCs', status: 'Erledigt', prio: 'Normal', techniker: 'A. Köhler', zeit: '1:00 h', geraet: '' }],
+      k5: [{ nr: 'T-2460', titel: 'Druckertreiber aktualisieren', status: 'Erledigt', prio: 'Niedrig', techniker: 'A. Köhler', zeit: '0:30 h', geraet: '' }]
+    };
+  }
+
+  offlineMin(z) {
+    const m = /vor (\d+) (Min|Std|Tag)/.exec(z || '');
+    if (!m) return 0;
+    const n = Number(m[1]);
+    return m[2] === 'Min' ? n : (m[2] === 'Std' ? n * 60 : n * 1440);
+  }
+
+  dauerText(min) {
+    if (min >= 1440) { const d = Math.round(min / 1440); return d + (d === 1 ? ' Tag' : ' Tagen'); }
+    if (min >= 60) return Math.round(min / 60) + ' Std.';
+    return min + ' Min.';
+  }
+
+  bewerte(x) {
+    if (x.online) return x;
+    const min = this.offlineMin(x.zuletzt);
+    const kern = ['Server', 'Firewall', 'Speicher'].indexOf(x.typ) >= 0;
+    let sev = x.sev, problem = x.problem;
+    if (kern && min >= 15) { sev = 'crit'; problem = problem || 'Offline seit ' + this.dauerText(min); }
+    else if (!kern && min >= 7 * 1440 && sev === 'ok') { sev = 'warn'; problem = 'Seit ' + this.dauerText(min) + ' offline'; }
+    return Object.assign({}, x, { sev, problem, offlineMin: min });
+  }
+
+  basis(x) {
+    const r = this.rnd(x.name + '|b');
+    const t = Math.floor(2 + r() * 25);
+    return {
+      agent: '0.12.' + (x.online ? '6' : '4'),
+      start: x.online ? (t > 8 ? '18.10.2026' : '3.11.2026') : '—',
+      laufzeit: x.online ? t + ' T ' + Math.floor(r() * 23) + ' Std' : '—'
+    };
+  }
+
+  panel(x, c, s) {
+    const d = this.details(x);
+    const t = c.tickets.find((tk) => tk.status !== 'Erledigt' && tk.geraet === x.name);
+    const hwProb = d.hw.filter((h) => h.status !== 'OK');
+    const zahl = { ok: 0, warn: 0, crit: 0, none: 0 };
+    d.verlauf.forEach((v) => { zahl[v.k] = (zahl[v.k] || 0) + 1; });
+    const zTeile = [];
+    if (zahl.crit) zTeile.push(zahl.crit + ' Fehler');
+    if (zahl.warn) zTeile.push(zahl.warn + (zahl.warn === 1 ? ' Warnung' : ' Warnungen'));
+    if (zahl.none) zTeile.push(zahl.none + ' ohne Meldung');
+    const auto = hwProb.length ? 'hardware' : '';
+    const offenSek = s.dSec === undefined ? auto : s.dSec;
+    const sek = (key, titel, summe, prob) => ({
+      titel, summe, sumFg: prob ? '#A11A1A' : '#5F5A5B', sumW: prob ? '600' : '400',
+      offenAttr: offenSek === key ? 'true' : 'false', rot: offenSek === key ? '90' : '0',
+      toggle: () => this.setState({ dSec: offenSek === key ? '' : key })
+    });
+    const sektionen = [
+      sek('verlauf', 'Verlauf · letzte 24 Stunden', 'CPU Ø ' + d.cpuAvg + ' %, RAM Ø ' + d.ramAvg + ' %', false),
+      sek('zustand', 'Zustand · letzte 28 Tage', zTeile.length ? zTeile.join(', ') : 'Alle Tage in Ordnung', zahl.crit > 0)
+    ];
+    if (d.hw.length) sektionen.push(sek('hardware', 'Hardware · RAID & Datenträger', hwProb.length ? hwProb.length + ' von ' + d.hw.length + ' mit Problemen' : 'Alle ' + d.hw.length + ' in Ordnung', hwProb.length > 0));
+    const kritisch = x.sev === 'crit';
+    return Object.assign(d, {
+      hatProblem: !!x.problem,
+      pBg: kritisch ? '#FDECEC' : '#FFF6EA', pBd: kritisch ? '#F3B9B9' : '#F5D3A3', pFg: kritisch ? '#7A1414' : '#6B3A00',
+      ticketHinweis: t ? 'Ticket ' + t.nr + ' · ' + t.status + ' · ' + (t.techniker === 'nicht zugewiesen' ? 'noch nicht zugewiesen' : t.techniker) : 'Noch kein Ticket zu diesem Gerät',
+      ticketButton: t ? 'Zum Ticket ' + t.nr : 'Ticket anlegen',
+      sektionen,
+      zeigVerlauf: offenSek === 'verlauf', zeigZustand: offenSek === 'zustand', zeigHardware: offenSek === 'hardware' && d.hw.length > 0
+    });
+  }
+
+  details(x) {
+    const r = this.rnd(x.name);
+    const server = x.typ === 'Server';
+    const ramGb = x.ramGb || (server ? 32 : 16);
+    const n = 48;
+    const base = server ? 18 : 10;
+    const cpu = [], ram = [];
+    let ramLvl = 45 + r() * 25;
+    for (let i = 0; i < n; i++) {
+      let v = base + r() * 12;
+      if (r() > 0.9) v += 30 + r() * 30;
+      if (!x.online && i > 40) v = 0;
+      cpu.push(Math.min(100, v));
+      ramLvl = Math.max(20, Math.min(92, ramLvl + (r() - 0.5) * 6));
+      ram.push(!x.online && i > 40 ? 0 : ramLvl);
+    }
+    const pts = (arr) => arr.map((v, i) => (i * 600 / (n - 1)).toFixed(1) + ',' + (126 - v * 1.2).toFixed(1)).join(' ');
+    const cpuNow = x.online ? cpu[n - 1] : 0;
+    const ramNow = x.online ? ram[n - 1] : 0;
+    const lwRaw = x.lw || [['C:', Math.round(35 + r() * 40)]];
+    const laufwerke = lwRaw.map((l) => {
+      const pct = l[1];
+      const sev = pct >= 90 ? 'crit' : (pct >= 80 ? 'warn' : 'ok');
+      const farbe = sev === 'crit' ? '#C62828' : (sev === 'warn' ? '#E39A1C' : '#6FA01F');
+      return { name: l[0], pct, farbe, text: pct + ' % belegt' + (sev === 'crit' ? ' · kritisch' : ''), textFg: sev === 'crit' ? '#A11A1A' : '#3F3B3C', textWeight: sev === 'crit' ? '600' : '400' };
+    });
+    const hwStil = { 'OK': ['#E4E3E1', '#FFFFFF', '#1D6B43'], 'Warnung': ['#F5D3A3', '#FFF6EA', '#8A4B00'], 'Kritisch': ['#F3B9B9', '#FDECEC', '#A11A1A'] };
+    const hw = (x.hw || []).map((h) => { const s = hwStil[h[1]] || hwStil.OK; return { name: h[0], status: h[1], info: h[2], bd: s[0], bg: s[1], fg: s[2] }; });
+    const verlauf = [];
+    for (let i = 0; i < 28; i++) {
+      const tageZurueck = 27 - i;
+      let s = r() > 0.94 ? 'warn' : 'ok';
+      if (x.sev === 'crit' && tageZurueck < 3) s = 'crit';
+      else if (x.sev === 'warn' && tageZurueck < 4) s = 'warn';
+      if (!x.online && tageZurueck < Math.max(1, Math.ceil((x.offlineMin || 0) / 1440))) s = 'none';
+      if (tageZurueck === 0 && s === 'ok') s = 'today';
+      verlauf.push(this.punkt(s, tageZurueck));
+    }
+    const laufzeitTage = Math.floor(2 + r() * 25);
+    return {
+      cpu: cpuNow.toFixed(1).replace('.', ',') + ' %',
+      cpuInfo: server ? 'Durchschnitt 24 Std.: ' + Math.round(base + 8) + ' %' : 'Arbeitsplatz-CPU',
+      ram: (ramNow * ramGb / 100).toFixed(1).replace('.', ',') + ' / ' + ramGb + ' GB',
+      ramInfo: Math.round(ramNow) + ' % belegt',
+      lwAnzahl: String(laufwerke.length),
+      cpuPts: pts(cpu), ramPts: pts(ram),
+      cpuAvg: Math.round(cpu.reduce((a, v) => a + v, 0) / n), ramAvg: Math.round(ram.reduce((a, v) => a + v, 0) / n),
+      laufwerke, hw, hatHw: hw.length > 0, verlauf,
+      agent: '0.12.' + (x.online ? '6' : '4'),
+      start: x.online ? (laufzeitTage > 8 ? '18.10.2026' : '3.11.2026') : '—',
+      laufzeit: x.online ? laufzeitTage + ' T ' + Math.floor(r() * 23) + ' Std' : '—'
+    };
+  }
+
+  punkt(s, tageZurueck) {
+    const farben = { ok: ['#6FA01F', '#6FA01F'], today: ['#FFFFFF', '#6FA01F'], warn: ['#E39A1C', '#E39A1C'], crit: ['#C62828', '#C62828'], none: ['#FFFFFF', '#B5B1B2'] };
+    const text = { ok: 'In Ordnung', today: 'Heute – läuft noch', warn: 'Warnung', crit: 'Fehler', none: 'Keine Meldung' };
+    const f = farben[s];
+    return { k: s === 'today' ? 'ok' : s, c: f[0], b: f[1], t: (tageZurueck === 0 ? 'Heute' : 'vor ' + tageZurueck + (tageZurueck === 1 ? ' Tag' : ' Tagen')) + ': ' + text[s] };
+  }
+
+  renderVals() {
+    const s = this.state || {};
+    const sel = s.sel || 'k1';
+    const q = (s.query || '').trim().toLowerCase();
+    const showAll = !!s.showAll;
+    const accent = this.props.accent ?? '#99CC33';
+
+    const rank = { crit: 0, warn: 1, ok: 2 };
+    const label = { crit: 'Kritisch', warn: 'Warnung', ok: 'OK' };
+    const bg = { crit: '#FDECEC', warn: '#FFF1E0', ok: '#E8F4EE' };
+    const fg = { crit: '#A11A1A', warn: '#8A4B00', ok: '#1D6B43' };
+    const worst = (arr) => arr.reduce((m, x) => (rank[x.sev] < rank[m] ? x.sev : m), 'ok');
+
+    const zusatz = this.zusatzTickets();
+    const alle = this.daten().map((k) => {
+      const geraete = k.geraete.map((x) => this.bewerte(x));
+      const bWert = k.backups.length ? k.backups : [{ sev: 'warn' }];
+      return Object.assign({}, k, { geraete, tickets: k.tickets.concat(zusatz[k.id] || []), sev: worst(geraete.concat(bWert)) });
+    })
+      .sort((a, b) => (rank[a.sev] - rank[b.sev]) || a.name.localeCompare(b.name));
+
+    const kunden = alle
+      .filter((k) => !q || k.name.toLowerCase().indexOf(q) >= 0 || k.nr.toLowerCase().indexOf(q) >= 0)
+      .map((k) => {
+        const n = k.tickets.filter((t) => t.status !== 'Erledigt').length;
+        const aktiv = k.id === sel;
+        return {
+          name: k.name,
+          sub: k.geraete.length + (k.geraete.length === 1 ? ' Gerät · ' : ' Geräte · ') + n + (n === 1 ? ' Ticket' : ' Tickets'),
+          badge: label[k.sev], badgeBg: bg[k.sev], badgeFg: fg[k.sev], hatBadge: k.sev !== 'ok',
+          aktuell: aktiv ? 'page' : 'false',
+          bg: aktiv ? '#3A3536' : 'transparent',
+          bd: 'transparent',
+          pick: () => {
+            const erstes = k.geraete.slice().sort((a, b) => rank[a.sev] - rank[b.sev])[0];
+            this.setState({ view: 'kunden', sel: k.id, dSec: undefined, showAll: false, gLimit: 50, bOffen: false, offen: erstes && erstes.sev !== 'ok' ? erstes.name : '' });
+          }
+        };
+      });
+
+    const leerKunde = { id: '', name: 'Keine Kunden', nr: '', kontakt: '', zeit: '0:00 h', geraete: [], tickets: [], backups: [] };
+    const c = alle.find((k) => k.id === sel) || alle[0] || leerKunde;
+    const gLimit = s.gLimit || 50;
+
+    const sortiert = c.geraete.slice().sort((a, b) => (rank[a.sev] - rank[b.sev]) || a.name.localeCompare(b.name));
+    const probleme = sortiert.filter((x) => x.sev !== 'ok');
+    const sichtbarAlle = showAll ? sortiert : probleme;
+    const sichtbar = sichtbarAlle.slice(0, gLimit);
+    const rest = sortiert.length - probleme.length;
+
+    const geraete = sichtbar.map((x) => {
+      const offen = s.offen === x.name;
+      const d = Object.assign(offen ? this.panel(x, c, s) : {}, this.basis(x));
+      return Object.assign(d, {
+        name: x.name, typ: x.typ,
+        status: x.online ? 'Online' : 'Offline',
+        zuletzt: x.zuletzt,
+        dot: x.online ? '#7FB51F' : '#9AA0AB',
+        problem: x.problem || '—',
+        problemFg: x.sev === 'crit' ? '#A11A1A' : (x.sev === 'warn' ? '#8A4B00' : '#5F5A5B'),
+        problemWeight: x.sev === 'ok' ? '400' : '600',
+        badge: label[x.sev], badgeBg: bg[x.sev], badgeFg: fg[x.sev],
+        offen, offenAttr: offen ? 'true' : 'false',
+        rot: offen ? '90' : '0',
+        rowBg: offen ? '#FAFAF8' : '#FFFFFF',
+        toggle: () => this.setState({ offen: offen ? '' : x.name, dSec: undefined })
+      });
+    });
+
+    const stBg = { 'Offen': '#FFFFFF', 'In Arbeit': '#E8E7E4', 'Wartet auf Kunde': '#F6F6F4', 'Erledigt': 'transparent' };
+    const stFg = { 'Offen': '#231F20', 'In Arbeit': '#231F20', 'Wartet auf Kunde': '#5F5A5B', 'Erledigt': '#5F5A5B' };
+    const stBd = { 'Offen': '#CFCCC8', 'In Arbeit': '#E8E7E4', 'Wartet auf Kunde': '#D9D7D3', 'Erledigt': 'transparent' };
+    const tickets = c.tickets.filter((t) => t.status !== 'Erledigt').map((t) => Object.assign({}, t, {
+      stBg: stBg[t.status] || '#FFFFFF', stFg: stFg[t.status] || '#231F20', stBd: stBd[t.status] || '#CFCCC8',
+      prioWeight: t.prio === 'Hoch' ? '700' : '400',
+      prioFg: t.prio === 'Hoch' ? '#A11A1A' : '#5F5A5B',
+      geraetText: t.geraet || '—'
+    }));
+
+    const bStil = { ok: ['#D6EBB5', '#F4F9EC', '#3F6410', 'In Ordnung'], warn: ['#F5D3A3', '#FFF6EA', '#8A4B00', 'Warnung'], crit: ['#F3B9B9', '#FDECEC', '#A11A1A', 'Fehlgeschlagen'] };
+    const backups = c.backups.map((b) => {
+      const r = this.rnd(b.name + c.id);
+      const schlecht = {};
+      b.schlecht.forEach((p) => { schlecht[p[0]] = p[1]; });
+      const dots = [];
+      for (let i = 0; i < 28; i++) {
+        const tz = 27 - i;
+        let st = schlecht[tz] || 'ok';
+        if (tz === 0 && st === 'ok') st = 'today';
+        if (r() > 0.97 && st === 'ok') st = 'warn';
+        dots.push(this.punkt(st, tz));
+      }
+      const st = bStil[b.sev];
+      return { name: b.name, ziel: b.ziel, zuletzt: b.zuletzt, text: b.text, bd: st[0], bg: st[1], fg: st[2], statusText: st[3], dots };
+    });
+
+    const bLeer = c.backups.length === 0;
+    const bAlleOk = !bLeer && c.backups.every((b) => b.sev === 'ok');
+    const bOffen = bAlleOk ? !!s.bOffen : true;
+    const bAnzProb = c.backups.filter((b) => b.sev !== 'ok').length;
+    const bInfo = bLeer ? 'Keine Sicherung hinterlegt' : (bAlleOk
+      ? 'Alle ' + c.backups.length + (c.backups.length === 1 ? ' Sicherung' : ' Sicherungen') + ' in Ordnung'
+      : bAnzProb + ' von ' + c.backups.length + (c.backups.length === 1 ? ' Sicherung' : ' Sicherungen') + ' mit Problemen');
+
+    const online = c.geraete.filter((x) => x.online).length;
+    const offlineAnz = c.geraete.length - online;
+    const ausfall = c.geraete.length >= 3 && offlineAnz / c.geraete.length >= 0.5;
+    const alleProbleme = probleme.concat(c.backups.filter((b) => b.sev !== 'ok')).concat(bLeer && c.id ? [{ sev: 'warn' }] : []);
+    const nKrit = alleProbleme.filter((x) => x.sev === 'crit').length;
+    const nWarn = alleProbleme.filter((x) => x.sev === 'warn').length;
+    const teile = [];
+    if (nKrit) teile.push(nKrit + ' kritisch');
+    if (nWarn) teile.push(nWarn + (nWarn === 1 ? ' Warnung' : ' Warnungen'));
+
+    const view = s.view || 'kunden';
+    const dsAkt = s.ds || 'demo';
+    const dsOpt = [['demo', 'Demo-Daten'], ['worst', 'Worst case'], ['eins', 'Je eins'], ['leer', 'Leer']].map((o) => ({
+      l: o[1], bg: dsAkt === o[0] ? '#FFFFFF' : 'transparent', fw: dsAkt === o[0] ? '600' : '400', aktivAttr: dsAkt === o[0] ? 'true' : 'false',
+      pick: () => { const ersterKunde = { demo: 'k1', worst: 'w1', eins: 'e1', leer: '' }[o[0]]; this.setState({ ds: o[0], sel: ersterKunde, offen: '', showAll: false, gLimit: 50, tLimit: 25, bOffen: false, tOffen: '', tKunde: 'alle', tTech: 'alle', tPrio: 'alle', tStatus: 'offen', tQuery: '', query: '' }); }
+    }));
+    const tv = this.ticketView(alle, accent, rank, label, bg, fg, stBg, stFg, stBd);
+
+    return Object.assign(tv, {
+      dsOpt,
+      istKunden: view === 'kunden',
+      kundenSicht: view === 'kunden' && alle.length > 0,
+      keineKundenSicht: view === 'kunden' && alle.length === 0,
+      hatKontakt: !!c.kontakt,
+      ausfall,
+      ausfallText: offlineAnz + ' von ' + c.geraete.length + ' Geräten sind gleichzeitig offline. Vor Ort oder beim Kunden nachfragen, bevor einzelne Geräte geprüft werden.',
+      bLeer, bZeigen: !bLeer && bOffen, bUmschaltbar: bAlleOk,
+      bInfo, bInfoFg: bLeer ? '#8A4B00' : (bAlleOk ? '#5F5A5B' : '#A11A1A'), bInfoW: bAlleOk ? '400' : '600',
+      bOffenAttr: bOffen ? 'true' : 'false',
+      bToggleText: bOffen ? 'Details ausblenden' : 'Details anzeigen',
+      bToggle: () => this.setState({ bOffen: !s.bOffen }),
+      mehrGeraete: sichtbarAlle.length > sichtbar.length,
+      mehrGeraeteText: 'Weitere ' + Math.min(50, sichtbarAlle.length - sichtbar.length) + ' von ' + (sichtbarAlle.length - sichtbar.length) + ' laden',
+      ladeMehrGeraete: () => this.setState({ gLimit: gLimit + 50 }),
+      istTickets: view === 'tickets',
+      navKundenBg: view === 'kunden' ? '#3A3536' : 'transparent',
+      navTicketsBg: view === 'tickets' ? '#3A3536' : 'transparent',
+      zeigeKunden: () => this.setState({ view: 'kunden' }),
+      zeigeTickets: () => this.setState({ view: 'tickets' }),
+      accent,
+      query: s.query || '',
+      onSearch: (e) => this.setState({ query: e.target.value }),
+      kunden,
+      keineTreffer: kunden.length === 0,
+      c,
+      kpi: {
+        online: online + ' / ' + c.geraete.length,
+        bedarf: String(alleProbleme.length),
+        bedarfFg: nKrit ? '#A11A1A' : (nWarn ? '#8A4B00' : '#1D6B43'),
+        bedarfSub: teile.length ? teile.join(', ') : 'alles in Ordnung',
+        tickets: String(tickets.length)
+      },
+      geraete,
+      alleOk: !showAll && probleme.length === 0,
+      zeigeRest: !showAll && rest > 0 && probleme.length > 0,
+      restText: rest + (rest === 1 ? ' weiteres Gerät' : ' weitere Geräte') + ' ohne Auffälligkeiten',
+      toggleLabel: showAll ? 'Nur Handlungsbedarf' : (sortiert.length === 1 ? 'Gerät anzeigen' : 'Alle ' + sortiert.length + ' Geräte anzeigen'),
+      toggleAll: () => this.setState({ showAll: !showAll, gLimit: 50 }),
+      tickets,
+      keineTickets: tickets.length === 0,
+      backups
+    });
+  }
+
+  setKi(nr, patch) {
+    const alt = (this.state && this.state.ki) || {};
+    const neu = Object.assign({}, alt);
+    neu[nr] = Object.assign({}, alt[nr] || {}, patch);
+    this.setState({ ki: neu });
+  }
+
+  async vorschlagen(t, art) {
+    const nr = t.nr;
+    const ki = ((this.state && this.state.ki) || {})[nr] || {};
+    const notiz = (ki.notiz || '').trim();
+    if (art !== 'kurz' && !notiz) { this.setKi(nr, { fehler: 'Bitte zuerst ein paar Stichwörter eingeben.' }); return; }
+    if (art === 'kurz' && !(ki.text || '').trim()) return;
+    this.setKi(nr, { laedt: true, fehler: '', uebernommen: false });
+    let sample = null;
+    try { sample = (window.claude && window.claude.use) ? await window.claude.use('sample') : null; } catch (e) { sample = null; }
+    if (!sample) { this.setKi(nr, { laedt: false, fehler: 'Im Entwurf ist die KI gesperrt. Zum Ausprobieren den separaten Arbeitsbericht-Assistenten verwenden; im echten Cockpit läuft der Vorschlag über euer Backend.' }); return; }
+    const regeln = [
+      'Du schreibst für die IT-Firma Schwaiger Business IT Arbeitsberichte, die der Kunde im Ticket und auf der Rechnung liest.',
+      'Stil:',
+      '- Sachlich und unpersönlich im Passiv ("wurde deaktiviert", "wurden eingerichtet"). Kein "wir", kein "Sie", keine Anrede, keine Grußformel.',
+      '- Ganze, gut lesbare Sätze in professionellem Deutsch. Stichwörter werden zu vollständigen Sätzen ausformuliert und sinnvoll verbunden ("Dazu wurden ...", "Zusätzlich wurde ...").',
+      '- Produkt- und Fachbegriffe bleiben erhalten und werden korrekt geschrieben (Active Directory, Microsoft 365, Keeper). Abkürzungen beim ersten Vorkommen ausschreiben, z. B. "Active Directory (AD)". Nicht zusätzlich erklären.',
+      '- Nur was in den Stichwörtern steht. Nichts erfinden: keine zusätzlichen Zahlen, Ursachen, Empfehlungen, Ergebnisse oder nächsten Schritte.',
+      '- Zusammengehöriges in einen Absatz, eigenständige Zusatzarbeiten in einen zweiten Absatz. Keine Aufzählung, kein Markdown.',
+      '- Antworte nur mit dem fertigen Text.',
+      '',
+      'Beispiel',
+      'Stichwörter: Vororttermin, User Weber deaktiviert, User Wurzer angelegt und Profil auf Laptop angelegt, AD User, M365 User erstellt. Keeper User erstellt und alles Basismäßig eingerichtet.',
+      'Text:',
+      'Im Rahmen eines Vor-Ort-Termins wurde der bestehende Benutzer Weber deaktiviert und der neue Benutzer Wurzer eingerichtet. Dazu wurden ein Benutzerkonto im Active Directory (AD) sowie ein Microsoft-365-Konto erstellt und das Benutzerprofil am Laptop eingerichtet.',
+      'Zusätzlich wurde ein Keeper-Benutzerkonto angelegt und die erforderlichen Grundeinstellungen für die Nutzung vorgenommen.'
+    ].join('\n');
+    const prompt = art === 'kurz'
+      ? regeln + '\n\nFasse diesen Arbeitsbericht in höchstens 2 Sätzen zusammen:\n' + ki.text
+      : regeln + '\n\nJetzt der echte Fall. Der Ticket-Titel dient nur als Zusammenhang, der Text beschreibt die erledigten Arbeiten.\nTicket: ' + t.titel + '\nKunde: ' + t.kunde + '\nBetroffenes Gerät: ' + (t.geraet || 'keines') + '\nStichwörter des Technikers: ' + notiz;
+    try {
+      const r = await sample(prompt, { modelTier: 'quick', cache: false, onText: ({ text }) => this.setKi(nr, { text }) });
+      this.setKi(nr, { laedt: false, text: (r.text || '').trim() });
+    } catch (e) {
+      const code = e && e.code;
+      const msg = code === 'not_granted' ? 'Die Nutzung der KI wurde in dieser Ansicht nicht erlaubt.'
+        : (code === 'rate_limited' ? 'Gerade zu viele Anfragen. Bitte kurz warten und noch einmal versuchen.'
+        : (code === 'cancelled' ? 'Abgebrochen.' : 'Der Vorschlag konnte nicht erstellt werden. Bitte noch einmal versuchen.'));
+      this.setKi(nr, { laedt: false, fehler: msg, text: (e && e.text) ? e.text : (ki.text || '') });
+    }
+  }
+
+  setFotos(nr, liste) {
+    const alt = (this.state && this.state.fotos) || {};
+    const neu = Object.assign({}, alt);
+    neu[nr] = liste;
+    this.setState({ fotos: neu });
+  }
+
+  fotosVon(nr) { return ((this.state && this.state.fotos) || {})[nr] || []; }
+
+  mb(bytes) { return (bytes / 1048576).toFixed(1).replace('.', ',') + ' MB'; }
+
+  ticketView(alle, accent, rank, label, bg, fg, stBg, stFg, stBd) {
+    const s = this.state || {};
+    const fSt = s.tStatus || 'offen';
+    const fKu = s.tKunde || 'alle';
+    const fTe = s.tTech || 'alle';
+    const fPr = s.tPrio || 'alle';
+    const fQ = (s.tQuery || '').trim().toLowerCase();
+    const info = this.ticketInfo();
+
+    const geraetMap = {};
+    alle.forEach((k) => k.geraete.forEach((g) => { geraetMap[g.name] = g; }));
+
+    const roh = [];
+    alle.forEach((k) => k.tickets.forEach((t) => {
+      const i = info[t.nr] || ['—', 0, ''];
+      roh.push(Object.assign({}, t, { kundeId: k.id, kunde: k.name, erstellt: i[0], alterStd: i[1], beschreibung: i[2] }));
+    }));
+
+    const offenSt = (t) => t.status !== 'Erledigt';
+    const zaehl = (fn) => roh.filter(fn).length;
+    const anzahlOffen = zaehl(offenSt);
+
+    const techniker = [];
+    roh.forEach((t) => { if (techniker.indexOf(t.techniker) < 0) techniker.push(t.techniker); });
+    techniker.sort();
+
+    const passt = (t) => {
+      if (fSt === 'offen' && !offenSt(t)) return false;
+      if (fSt !== 'offen' && fSt !== 'alle' && t.status !== fSt) return false;
+      if (fKu !== 'alle' && t.kundeId !== fKu) return false;
+      if (fTe !== 'alle' && t.techniker !== fTe) return false;
+      if (fPr !== 'alle' && t.prio !== fPr) return false;
+      if (fQ && (t.titel + ' ' + t.nr + ' ' + t.geraet + ' ' + t.kunde).toLowerCase().indexOf(fQ) < 0) return false;
+      return true;
+    };
+    const prioR = { 'Hoch': 0, 'Normal': 1, 'Niedrig': 2 };
+    const stR = { 'Offen': 0, 'In Arbeit': 1, 'Wartet auf Kunde': 2, 'Erledigt': 3 };
+    const liste = roh.filter(passt).sort((a, b) => (stR[a.status] === 3) - (stR[b.status] === 3) || prioR[a.prio] - prioR[b.prio] || b.alterStd - a.alterStd);
+
+    const tLimit = s.tLimit || 25;
+    const alleTickets = liste.slice(0, tLimit).map((t) => {
+      const offen = s.tOffen === t.nr;
+      const kiT = (s.ki || {})[t.nr] || {};
+      const fotoListe = (s.fotos || {})[t.nr] || [];
+      const offeneFotos = fotoListe.filter((f) => !f.hochgeladen).length;
+      const g = t.geraet ? geraetMap[t.geraet] : null;
+      const erledigt = t.status === 'Erledigt';
+      return Object.assign({}, t, {
+        stBg: stBg[t.status] || '#FFFFFF', stFg: stFg[t.status] || '#231F20', stBd: stBd[t.status] || '#CFCCC8',
+        beschreibungText: t.beschreibung || 'Keine Beschreibung hinterlegt.',
+        beschrFg: t.beschreibung ? '#231F20' : '#5F5A5B',
+        prioWeight: t.prio === 'Hoch' ? '700' : '400',
+        prioFg: t.prio === 'Hoch' ? '#A11A1A' : '#5F5A5B',
+        techFg: t.techniker === 'nicht zugewiesen' ? '#8A4B00' : '#3F3B3C',
+        titelFg: erledigt ? '#5F5A5B' : '#231F20',
+        alter: t.alterStd < 24 ? t.alterStd + ' Std.' : Math.round(t.alterStd / 24) + ' Tage',
+        offen, offenAttr: offen ? 'true' : 'false',
+        rot: offen ? '90' : '0',
+        rowBg: offen ? '#FAFAF8' : '#FFFFFF',
+        hatGeraet: !!g, ohneGeraet: !t.geraet, geraetFehlt: !!t.geraet && !g,
+        notiz: kiT.notiz || '',
+        onNotiz: (e) => this.setKi(t.nr, { notiz: e.target.value }),
+        kiText: kiT.text || '',
+        kiTextDa: !!(kiT.text || '').length,
+        onKiText: (e) => this.setKi(t.nr, { text: e.target.value, uebernommen: false }),
+        kiLaedt: !!kiT.laedt,
+        kiFehler: kiT.fehler || '', kiFehlerDa: !!kiT.fehler,
+        kiUebernommen: !!kiT.uebernommen,
+        kiButton: kiT.laedt ? 'Bitte warten …' : ((kiT.text || '').length ? 'Neu vorschlagen' : 'Text vorschlagen'),
+        kiVorschlag: () => { if (!kiT.laedt) this.vorschlagen(t, 'normal'); },
+        kiKuerzer: () => { if (!kiT.laedt) this.vorschlagen(t, 'kurz'); },
+        kiUebernehmen: () => this.setKi(t.nr, { uebernommen: true }),
+        fotos: fotoListe.map((f) => ({
+          id: f.id, name: f.name, url: f.url, text: f.text || '',
+          alt: f.text ? f.text : 'Foto ' + f.name,
+          status: f.hochgeladen ? 'Hochgeladen' : this.mb(f.groesse),
+          stFg: f.hochgeladen ? '#3F6410' : '#5F5A5B', stW: f.hochgeladen ? '600' : '400',
+          onText: (e) => this.setFotos(t.nr, this.fotosVon(t.nr).map((x) => x.id === f.id ? Object.assign({}, x, { text: e.target.value }) : x)),
+          entfernen: () => { try { URL.revokeObjectURL(f.url); } catch (e) {} this.setFotos(t.nr, this.fotosVon(t.nr).filter((x) => x.id !== f.id)); }
+        })),
+        hatFotos: fotoListe.length > 0,
+        fotoInfo: fotoListe.length ? fotoListe.length + (fotoListe.length === 1 ? ' Foto' : ' Fotos') + ' · ' + this.mb(fotoListe.reduce((a, f) => a + f.groesse, 0)) : 'Am Handy öffnet sich direkt die Kamera.',
+        onFotos: (e) => {
+          const dateien = Array.prototype.slice.call((e.target && e.target.files) || []);
+          const neu = dateien.filter((d) => /^image\//.test(d.type)).map((d, i) => ({ id: t.nr + '-' + Date.now() + '-' + i, name: d.name, groesse: d.size, url: URL.createObjectURL(d), text: '', hochgeladen: false }));
+          if (neu.length) this.setFotos(t.nr, this.fotosVon(t.nr).concat(neu));
+          try { e.target.value = ''; } catch (x) {}
+        },
+        uploadText: offeneFotos ? (offeneFotos === 1 ? '1 Foto nach weclapp hochladen' : offeneFotos + ' Fotos nach weclapp hochladen') : 'Alle Fotos hochgeladen',
+        fotosFertig: fotoListe.length > 0 && offeneFotos === 0,
+        fotosHochladen: () => { if (offeneFotos) this.setFotos(t.nr, this.fotosVon(t.nr).map((x) => Object.assign({}, x, { hochgeladen: true }))); },
+        gLabel: g ? (g.online ? label[g.sev] + ' · Online' : label[g.sev] + ' · Offline') : '',
+        gBg: g ? bg[g.sev] : '', gFg: g ? fg[g.sev] : '',
+        gHinweis: g ? (g.problem || 'Keine Auffälligkeiten in Atera') : '',
+        toggle: () => this.setState({ tOffen: offen ? '' : t.nr }),
+        zumKunden: () => this.setState({ view: 'kunden', sel: t.kundeId, dSec: undefined, showAll: false, offen: t.geraet || '' })
+      });
+    });
+
+    const kachel = (key, lbl, wert, sub, fgc, setz) => {
+      const aktiv = key === fSt + '|' + fTe;
+      return { label: lbl, wert: String(wert), sub, fg: fgc, bd: aktiv ? '#99CC33' : '#E4E3E1', aktivAttr: aktiv ? 'true' : 'false',
+        pick: () => this.setState(aktiv ? { tStatus: 'offen', tTech: 'alle' } : setz) };
+    };
+    const tKacheln = [
+      kachel('Offen|alle', 'Offen', zaehl((t) => t.status === 'Offen'), 'noch nicht begonnen', '#231F20', { tStatus: 'Offen', tTech: 'alle' }),
+      kachel('In Arbeit|alle', 'In Arbeit', zaehl((t) => t.status === 'In Arbeit'), 'wird gerade bearbeitet', '#231F20', { tStatus: 'In Arbeit', tTech: 'alle' }),
+      kachel('Wartet auf Kunde|alle', 'Wartet auf Kunde', zaehl((t) => t.status === 'Wartet auf Kunde'), 'Rückmeldung ausständig', '#231F20', { tStatus: 'Wartet auf Kunde', tTech: 'alle' }),
+      kachel('offen|nicht zugewiesen', 'Nicht zugewiesen', zaehl((t) => offenSt(t) && t.techniker === 'nicht zugewiesen'), 'braucht einen Techniker', '#231F20', { tStatus: 'offen', tTech: 'nicht zugewiesen' })
+    ];
+
+    const opt = (v, l) => ({ v, l });
+    const statusOpt = [opt('offen', 'Alle offenen'), opt('Offen', 'Offen'), opt('In Arbeit', 'In Arbeit'), opt('Wartet auf Kunde', 'Wartet auf Kunde'), opt('Erledigt', 'Erledigt'), opt('alle', 'Alle inkl. erledigt')];
+    const kundeOpt = [opt('alle', 'Alle Kunden')].concat(alle.slice().sort((a, b) => a.name.localeCompare(b.name)).map((k) => opt(k.id, k.name)));
+    const techOpt = [opt('alle', 'Alle Techniker')].concat(techniker.map((n) => opt(n, n === 'nicht zugewiesen' ? 'Nicht zugewiesen' : n)));
+    const prioOpt = [opt('alle', 'Alle'), opt('Hoch', 'Hoch'), opt('Normal', 'Normal'), opt('Niedrig', 'Niedrig')];
+
+    return {
+      anzahlOffen: String(anzahlOffen),
+      tKacheln,
+      alleTickets,
+      keineTrefferT: alleTickets.length === 0,
+      mehrTickets: liste.length > alleTickets.length,
+      mehrTicketsText: 'Weitere ' + Math.min(25, liste.length - alleTickets.length) + ' von ' + (liste.length - alleTickets.length) + ' laden',
+      ladeMehrTickets: () => this.setState({ tLimit: tLimit + 25 }),
+      f: {
+        query: s.tQuery || '', status: fSt, kunde: fKu, tech: fTe, prio: fPr,
+        statusOpt, kundeOpt, techOpt, prioOpt,
+        onQuery: (e) => this.setState({ tQuery: e.target.value, tLimit: 25 }),
+        onStatus: (e) => this.setState({ tStatus: e.target.value, tLimit: 25 }),
+        onKunde: (e) => this.setState({ tKunde: e.target.value, tLimit: 25 }),
+        onTech: (e) => this.setState({ tTech: e.target.value, tLimit: 25 }),
+        onPrio: (e) => this.setState({ tPrio: e.target.value, tLimit: 25 }),
+        reset: () => this.setState({ tQuery: '', tStatus: 'offen', tKunde: 'alle', tTech: 'alle', tPrio: 'alle' }),
+        trefferText: liste.length + (liste.length === 1 ? ' Ticket' : ' Tickets')
+      }
+    };
+  }
+}
+</script>
+</body>
+</html>
