@@ -171,6 +171,18 @@ export async function catalog(token) {
 }
 
 // ---------- Berechnung (identische Logik wie V4, aber am Server) ----------
+/** Berechnung + Prüfpunkt für Positionen ohne weclapp-Artikel (braucht weclapp-Zugriff) */
+export async function calculateChecked(token, input) {
+  const calc = calculate(input);
+  try {
+    const lines = [...calc.monthly, ...calc.once];
+    const ids = await resolveArticles(token, [...new Set(lines.map((l) => l.sku))]);
+    const open = [...new Set(lines.filter((l) => !ids[l.sku]).map((l) => (l.project ? 'Projektposition' : l.name)))];
+    if (open.length) calc.warnings.push(`Noch kein weclapp-Artikel für: ${open.join(', ')}. Die Unterschrift wird gespeichert, das Angebot kann aber erst nach der Artikelzuordnung in weclapp angelegt werden (dann „Erneut an weclapp senden“).`);
+  } catch { /* weclapp nicht erreichbar – Prüfung beim Anlegen */ }
+  return calc;
+}
+
 export function calculate(input, s = boardSettings()) {
   const assets = Object.fromEntries(['users', 'clients', 'servers', 'firewalls', 'sites'].map((k) => [k, count(input.assets?.[k])]));
   const monthly = [], once = [];
@@ -303,7 +315,7 @@ export async function previewPdf(input, session) {
 export async function signAndCreate(token, input, session) {
   const customer = customerOf(input);
   if (!customer.id && customer.company.length < 2) throw bad('Bitte den Kunden angeben (weclapp-Kunde wählen oder Unternehmen eintragen)');
-  const calc = calculate(input);
+  const calc = await calculateChecked(token, input);
   if (!calc.monthly.length && !calc.once.length) throw bad('Bitte mindestens eine Leistung auswählen');
   if (calc.warnings.length && !input.ready) throw bad('Es gibt offene Prüfpunkte. Bitte intern prüfen und „Intern geprüft“ bestätigen.');
   const signerName = str(input.signerName, 200);

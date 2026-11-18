@@ -94,3 +94,13 @@ test('Neukunde + Unterschrift -> Kunde, Angebot, Auftrag in weclapp (mit zugeord
   assert.equal(r.totals.monthly, 5 * 18 + 149);
   assert.deepEqual(r.monthly.map((l) => l.articleNumber), ['10020', '10030']); // echte Nummern fürs PDF
 });
+
+test('Paket ohne weclapp-Artikel wird Prüfpunkt und verlangt die interne Freigabe', async () => {
+  const input = { customer: { id: '501', company: 'Bäckerei Huber GmbH' }, products: [sel('secnode', 3)], signerName: 'Max Muster', acceptedTerms: true, signature: SIG };
+  const r = await offers.calculateChecked('demo-rene', input);
+  assert.ok(r.warnings.some((w) => /Noch kein weclapp-Artikel für: SIT Next Security Client Node Edition/.test(w)));
+  await assert.rejects(offers.signAndCreate('demo-rene', input, { userId: '101', name: 'Test' }), /Prüfpunkte/);
+  // zugeordnete Pakete erzeugen keinen solchen Prüfpunkt
+  const ok = await offers.calculateChecked('demo-rene', { products: [sel('clientpremium', 2)] });
+  assert.ok(!ok.warnings.some((w) => /weclapp-Artikel/.test(w)));
+});
