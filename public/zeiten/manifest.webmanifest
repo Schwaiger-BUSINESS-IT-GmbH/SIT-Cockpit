@@ -1,0 +1,16 @@
+{
+  "name": "SIT-Time – Ticket-Zeiterfassung",
+  "short_name": "SIT-Time",
+  "description": "Zeiten auf weclapp-Tickets starten, pausieren, stoppen und buchen",
+  "start_url": "/zeiten/",
+  "scope": "/zeiten/",
+  "display": "standalone",
+  "background_color": "#231f20",
+  "theme_color": "#231f20",
+  "lang": "de",
+  "icons": [
+    { "src": "/zeiten/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/zeiten/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/zeiten/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "_hinweis": "Feinsteuerung für das Angebotsboard. Artikel und Preise kommen aus weclapp (Artikelkategorie OFFER_ARTICLE_CATEGORY). Hier nur Gruppierung, Abrechnungsart und Texte überschreiben. billing: monthly | once",
+  "groups": ["Arbeitsplatz & Benutzer", "Sicherheit", "Server & Netzwerk", "Einmalige Leistungen"],
+  "terms": [12, 24, 36],
+  "defaultTerm": 36,
+  "termDiscounts": {},
+  "maxDiscount": 20,
+  "pdfTerms": ["Alle Preise in Euro.", "Es gelten die Allgemeinen Geschäftsbedingungen von {firma} ({agb})."],
+  "pdfTermsMonthly": "Monatliche Leistungen werden monatlich im Voraus verrechnet, die Laufzeit beträgt {laufzeit} Monate ab Leistungsbeginn.",
+  "pdfTermsOnce": "Einmalige Leistungen werden nach Erbringung verrechnet.",
+  "articles": {
+    "MS-WS":        { "group": "Arbeitsplatz & Benutzer", "billing": "monthly", "sort": 1, "highlight": true },
+    "MS-M365":      { "group": "Arbeitsplatz & Benutzer", "billing": "monthly", "sort": 2 },
+    "MS-SEC-MAIL":  { "group": "Sicherheit", "billing": "monthly", "sort": 3 },
+    "MS-EDR":       { "group": "Sicherheit", "billing": "monthly", "sort": 4 },
+    "MS-SRV":       { "group": "Server & Netzwerk", "billing": "monthly", "sort": 5, "highlight": true },
+    "MS-FW":        { "group": "Server & Netzwerk", "billing": "monthly", "sort": 6 },
+    "MS-BACKUP":    { "group": "Server & Netzwerk", "billing": "monthly", "sort": 7 },
+    "MS-SETUP-WS":  { "group": "Einmalige Leistungen", "billing": "once", "sort": 8 },
+    "MS-SETUP-SRV": { "group": "Einmalige Leistungen", "billing": "once", "sort": 9 },
+    "MS-ONBOARD":   { "group": "Einmalige Leistungen", "billing": "once", "sort": 10 }
+  }
+}

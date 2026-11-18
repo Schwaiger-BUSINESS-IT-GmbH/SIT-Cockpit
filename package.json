@@ -1,0 +1,21 @@
+{
+  "name": "sit-cockpit",
+  "version": "0.1.0",
+  "description": "SIT-Cockpit – Atera-Kundenübersicht, weclapp-Dashboard, Angebotsboard und Zeiterfassung für Schwaiger Business IT",
+  "private": true,
+  "type": "module",
+  "main": "server/index.js",
+  "engines": {
+    "node": ">=20.12"
+  },
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "demo": "node scripts/demo.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "pdfkit": "^0.15.2"
+  }
+}
