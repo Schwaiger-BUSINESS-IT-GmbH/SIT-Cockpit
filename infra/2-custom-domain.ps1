@@ -13,7 +13,7 @@
 param(
   [Parameter(Mandatory)] [string] $Hostname,
   [string] $AppName       = 'sit-cockpit-schwaiger',
-  [string] $ResourceGroup = 'rg-sit-cockpit',
+  [string] $ResourceGroup = 'rg-sit-time',
   [switch] $Bind
 )
 

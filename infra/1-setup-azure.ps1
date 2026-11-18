@@ -20,7 +20,8 @@ param(
   [Parameter(Mandatory)] [string] $GitHubRepo,             # "org/repo"
   [string] $AteraApiKey = '',                              # Atera > Admin > API (wird nur gesetzt, wenn angegeben)
   [string] $AppName       = 'sit-cockpit-schwaiger',          # global eindeutig -> <AppName>.azurewebsites.net
-  [string] $ResourceGroup = 'rg-sit-cockpit',
+  [string] $ResourceGroup = 'rg-sit-time',                 # gemeinsam mit SIT-Time (Plan muss in derselben RG liegen)
+  [string] $PlanName      = 'asp-sit-time-schwaiger',      # bestehenden Plan mitnutzen; leer = eigener Plan asp-<AppName>
   [string] $Location      = 'westeurope',
   [string] $PlanSku       = 'B1',
   [string] $GitHubBranch  = 'main',
@@ -48,8 +49,8 @@ Write-Host "Tenant:       $tenantId"
 Step "Resource Group $ResourceGroup ($Location)"
 AzOk group create -n $ResourceGroup -l $Location -o none
 
-Step "App Service Plan asp-$AppName ($PlanSku, Linux)"
-$plan = "asp-$AppName"
+$plan = $(if ($PlanName) { $PlanName } else { "asp-$AppName" })
+Step "App Service Plan $plan ($PlanSku, Linux)"
 if (-not (AzTry appservice plan show -g $ResourceGroup -n $plan -o none)) { AzOk appservice plan create -g $ResourceGroup -n $plan --is-linux --sku $PlanSku -o none }
 
 Step "Web App $AppName (Node 22)"

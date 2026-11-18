@@ -8,7 +8,7 @@
 #>
 param(
   [string] $AppName       = 'sit-cockpit-schwaiger',
-  [string] $ResourceGroup = 'rg-sit-cockpit'
+  [string] $ResourceGroup = 'rg-sit-time'
 )
 $ErrorActionPreference = 'Continue'
 function Step($m) { Write-Host "`n==> $m" -ForegroundColor Cyan }
