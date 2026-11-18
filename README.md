@@ -48,6 +48,7 @@ Ablauf in sechs Schritten: **Kundendaten** (weclapp-Kunde suchen oder Neukunde, 
 
 - **Katalog, Preise, Staffeln, Leistungsbeschreibungen, SLA-Modell, Checkliste und Vertragstexte** stehen in `config/angebotsboard.json` (übernommen aus SIT_Angebotsboard_V4). Preise werden **am Server** berechnet, der Browser schickt nur Auswahl und Mengen.
 - **Prüfpunkte** (Leistungsüberschneidungen, fehlende Leistungsbeschreibungen, Entwurfs-SLA-Preise, Servicezeiten …) sind nur intern sichtbar. Solange welche offen sind, muss im Schritt „Angebot“ *Intern geprüft* bestätigt werden, sonst ist keine Unterschrift möglich.
+- **Deutsch / Englisch:** Umschalter DE | EN in der Kopfleiste (auch in der Kundenansicht). Englisch sind Board, Angebot, PDF und die Positionstexte in weclapp; interne Bereiche bleiben deutsch. Englische Produkt-, SLA- und Vertragstexte: `config/angebotsboard.en.json` (Preise kommen immer aus `angebotsboard.json`).
 - **Kundenansicht** blendet Cockpit-Navigation, interne Einstufung, Quellen und Prüfpunkte aus – zum Übergeben des Tablets.
 - **Kundenstand speichern / Gespeicherte laden:** Entwürfe liegen am Server (`DATA_DIR/offers/drafts`), für alle Mitarbeiter sichtbar.
 - **Beim Unterschreiben:**

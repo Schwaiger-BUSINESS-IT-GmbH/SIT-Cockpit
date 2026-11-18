@@ -20,8 +20,43 @@ const r2 = (x) => Math.round(x * 100) / 100;
 const str = (v, max = 500) => String(v ?? '').trim().slice(0, max);
 const bad = (msg, status = 400) => Object.assign(new Error(msg), { status });
 
-export function boardSettings() {
-  return JSON.parse(fs.readFileSync(new URL('../config/angebotsboard.json', import.meta.url), 'utf8'));
+const DE_TEXTS = {
+  slaBase: 'Service-Level {label} – Grundgebühr',
+  slaBaseDesc: 'Vertragliche Erstreaktionsziele während der vereinbarten Servicezeiten, abgestuft nach Störungspriorität (P1 {p1}, P2 {p2}, P3 {p3}, P4 {p4}). Die Reaktionszeit ist keine garantierte Entstörungszeit.',
+  slaUser: 'Service-Level {label} – Benutzer',
+  slaUserDesc: 'Benutzerabhängiger Anteil der Service-Level-Betreuung.',
+  site: 'Zusätzlicher Standort',
+  siteDesc: 'Zuschlag je weiterem vereinbartem Betriebsstandort.',
+  setup: 'SLA-Einrichtung und Dokumentation',
+  setupDesc: 'Einmalige Standardkonfiguration und Dokumentation, bis zu 1,5 Stunden.',
+  projectDesc: 'Einmalige zusätzliche Projektleistung gemäß separater Beschreibung.',
+  exclusionsLabel: 'Abgrenzung / Voraussetzungen',
+  units: {},
+  monthlyLine: 'Monatlich wiederkehrend',
+  onceLine: 'Einmalig',
+};
+export const LANGS = ['de', 'en'];
+export const langOf = (v) => (LANGS.includes(v) ? v : 'de');
+const fillT = (t, vars) => String(t).replace(/\{(\w+)\}/g, (m, k) => (k in vars ? vars[k] : m));
+
+/** Einstellungen des Boards; für "en" mit den Texten aus angebotsboard.en.json (Preise bleiben gleich) */
+export function boardSettings(lang = 'de') {
+  const s = JSON.parse(fs.readFileSync(new URL('../config/angebotsboard.json', import.meta.url), 'utf8'));
+  s.lang = langOf(lang);
+  s.texts = { ...DE_TEXTS };
+  s.groupLabels = Object.fromEntries(s.groups.map((g) => [g, g]));
+  if (s.lang === 'de') return s;
+  let t = {};
+  try { t = JSON.parse(fs.readFileSync(new URL(`../config/angebotsboard.${s.lang}.json`, import.meta.url), 'utf8')); } catch { return s; }
+  if (t.company) s.company = { ...s.company, ...t.company };
+  if (t.groupLabels) s.groupLabels = { ...s.groupLabels, ...t.groupLabels };
+  s.products = s.products.map((p) => ({ ...p, ...(t.products?.[p.id] || {}) }));
+  if (t.sla?.labels) s.sla.labels = { ...s.sla.labels, ...t.sla.labels };
+  for (const [k, times] of Object.entries(t.sla?.times || {})) if (s.sla.rates[k]) s.sla.rates[k] = { ...s.sla.rates[k], ...times };
+  for (const [k, rv] of Object.entries(t.sla?.reviews || {})) if (s.sla.reviews[k]) s.sla.reviews[k] = { ...s.sla.reviews[k], ...rv };
+  if (t.texts) s.texts = { ...s.texts, ...t.texts, units: { ...(t.texts.units || {}) } };
+  for (const k of ['offerNotesPreview', 'offerNotesSigned']) if (t[k]) s[k] = t[k];
+  return s;
 }
 
 // ---------- Artikelzuordnung Board-Position -> weclapp-Artikel ----------
@@ -34,7 +69,7 @@ const loadMap = () => { try { return JSON.parse(fs.readFileSync(mapFile, 'utf8')
 const saveMap = (m) => fs.writeFileSync(mapFile, JSON.stringify(m, null, 2));
 
 /** Alle Board-Positionen, die einen weclapp-Artikel brauchen */
-export function positions(s = boardSettings()) {
+export function positions(s = boardSettings('de')) {
   const out = s.products.map((p) => ({ sku: p.sku, label: p.name, group: p.group, price: p.price, unit: p.unit }));
   for (const k of Object.keys(s.sla.rates)) {
     out.push({ sku: s.sla.skuBase[k], label: `Service-Level ${s.sla.labels[k]} – Grundgebühr`, group: 'Zusatz-SLA', price: s.sla.rates[k].base, unit: 'Monat' });
@@ -146,8 +181,8 @@ export async function setArticleMapping(token, sku, articleId, session) {
 
 // ---------- Katalog ----------
 /** Alles, was das Board zum Anzeigen braucht, plus Abgleich mit weclapp */
-export async function catalog(token) {
-  const s = boardSettings();
+export async function catalog(token, lang) {
+  const s = boardSettings(lang);
   let missing = [];
   let weclappError = null;
   try {
@@ -157,10 +192,13 @@ export async function catalog(token) {
     weclappError = e.message;
   }
   return {
+    lang: s.lang,
     company: s.company,
     groups: s.groups,
+    groupLabels: s.groupLabels,
+    texts: s.texts,
     products: s.products,
-    sla: { labels: s.sla.labels, rates: s.sla.rates, site: s.sla.site.price, setup: s.sla.setup.price, reviews: Object.fromEntries(Object.entries(s.sla.reviews).map(([k, v]) => [k, v.price])), draft: !!s.sla.draft },
+    sla: { labels: s.sla.labels, rates: s.sla.rates, site: s.sla.site.price, setup: s.sla.setup.price, reviews: Object.fromEntries(Object.entries(s.sla.reviews).map(([k, v]) => [k, v.price])), reviewTexts: Object.fromEntries(Object.entries(s.sla.reviews).map(([k, v]) => [k, { name: v.name, desc: v.desc }])), draft: !!s.sla.draft },
     vatPercent: s.vatPercent,
     onboardingChecks: s.onboardingChecks,
     offerNotesPreview: s.offerNotesPreview,
@@ -183,18 +221,19 @@ export async function calculateChecked(token, input) {
   return calc;
 }
 
-export function calculate(input, s = boardSettings()) {
+export function calculate(input, s = boardSettings(input?.lang)) {
   const assets = Object.fromEntries(['users', 'clients', 'servers', 'firewalls', 'sites'].map((k) => [k, count(input.assets?.[k])]));
   const monthly = [], once = [];
   const sla = s.sla.rates[input.sla] ? input.sla : 'none';
   if (sla !== 'none') {
-    const r = s.sla.rates[sla], label = s.sla.labels[sla];
-    monthly.push({ sku: s.sla.skuBase[sla], name: `Service-Level ${label} – Grundgebühr`, qty: 1, unit: 'Monat', price: r.base, desc: `Vertragliche Erstreaktionsziele während der vereinbarten Servicezeiten, abgestuft nach Störungspriorität (P1 ${r.p1}, P2 ${r.p2}, P3 ${r.p3}, P4 ${r.p4}). Die Reaktionszeit ist keine garantierte Entstörungszeit.` });
-    if (assets.users) monthly.push({ sku: s.sla.skuUser[sla], name: `Service-Level ${label} – Benutzer`, qty: assets.users, unit: 'User', price: r.user, desc: 'Benutzerabhängiger Anteil der Service-Level-Betreuung.' });
-    if (assets.sites > 1) monthly.push({ sku: s.sla.site.sku, name: 'Zusätzlicher Standort', qty: assets.sites - 1, unit: 'Standort', price: s.sla.site.price, desc: 'Zuschlag je weiterem vereinbartem Betriebsstandort.' });
+    const r = s.sla.rates[sla], label = s.sla.labels[sla], T = s.texts;
+    const U = (u) => T.units?.[u] || u;
+    monthly.push({ sku: s.sla.skuBase[sla], name: fillT(T.slaBase, { label }), qty: 1, unit: U('Monat'), price: r.base, desc: fillT(T.slaBaseDesc, r) });
+    if (assets.users) monthly.push({ sku: s.sla.skuUser[sla], name: fillT(T.slaUser, { label }), qty: assets.users, unit: U('User'), price: r.user, desc: T.slaUserDesc });
+    if (assets.sites > 1) monthly.push({ sku: s.sla.site.sku, name: T.site, qty: assets.sites - 1, unit: U('Standort'), price: s.sla.site.price, desc: T.siteDesc });
     const rev = s.sla.reviews[input.review];
-    if (rev) monthly.push({ sku: rev.sku, name: rev.name, qty: 1, unit: 'Monat', price: rev.price, desc: rev.desc });
-    if (input.setup !== false) once.push({ sku: s.sla.setup.sku, name: 'SLA-Einrichtung und Dokumentation', qty: 1, unit: 'einmalig', price: s.sla.setup.price, desc: 'Einmalige Standardkonfiguration und Dokumentation, bis zu 1,5 Stunden.' });
+    if (rev) monthly.push({ sku: rev.sku, name: rev.name, qty: 1, unit: U('Monat'), price: rev.price, desc: rev.desc });
+    if (input.setup !== false) once.push({ sku: s.sla.setup.sku, name: T.setup, qty: 1, unit: U('einmalig'), price: s.sla.setup.price, desc: T.setupDesc });
   }
   const chosen = [];
   for (const p of s.products) {
@@ -204,15 +243,15 @@ export function calculate(input, s = boardSettings()) {
     chosen.push({ ...p, qty });
     const price = p.threshold && qty >= p.threshold ? p.tier : p.price;
     const custom = str(sel.custom, 20000);
-    monthly.push({ sku: p.sku, name: p.name, qty, unit: p.unit, price, group: p.group, tierActive: price !== p.price, desc: custom || `${p.scope}\n\nAbgrenzung / Voraussetzungen:\n${p.exclusions}` });
+    monthly.push({ sku: p.sku, name: p.name, qty, unit: p.unit, price, group: p.group, tierActive: price !== p.price, desc: custom || `${p.scope}\n\n${s.texts.exclusionsLabel}:\n${p.exclusions}` });
   }
   const proj = input.project || {};
-  if (proj.enabled && str(proj.name)) once.push({ sku: s.projectSku, name: str(proj.name, 200), qty: 1, unit: 'einmalig', price: money(proj.price), desc: 'Einmalige zusätzliche Projektleistung gemäß separater Beschreibung.', project: true });
+  if (proj.enabled && str(proj.name)) once.push({ sku: s.projectSku, name: str(proj.name, 200), qty: 1, unit: s.texts.units?.einmalig || 'einmalig', price: money(proj.price), desc: s.texts.projectDesc, project: true });
 
   const sum = (l) => r2(l.reduce((a, x) => a + x.price * x.qty, 0));
   const m = sum(monthly), o = sum(once), vat = s.vatPercent / 100;
   const totals = { monthly: m, once: o, arr: r2(m * 12), first: r2(m + o), vat: r2((m + o) * vat), gross: r2((m + o) * (1 + vat)), vatPercent: s.vatPercent };
-  return { assets, sla, review: s.sla.reviews[input.review] ? input.review : 'none', monthly, once, totals, warnings: warnings(chosen, assets, sla, s) };
+  return { lang: s.lang, assets, sla, review: s.sla.reviews[input.review] ? input.review : 'none', monthly, once, totals, warnings: warnings(chosen, assets, sla, s) };
 }
 
 function warnings(chosen, assets, sla, s) {
@@ -369,6 +408,7 @@ async function pushToWeclapp(token, rec) {
       const missing = [...new Set(lines.filter((l) => !ids[l.sku]).map((l) => l.sku))];
       if (missing.length) throw new Error(`Keinem weclapp-Artikel zugeordnet: ${missing.join(', ')} (Angebotsboard → Artikelzuordnung)`);
       for (const l of lines) l.articleNumber = ids[l.sku].number; // echte Nummer fürs PDF
+      const T = boardSettings(rec.lang).texts;
       const toHtml = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/\n/g, '<br>');
       const q = unwrap(await request(token, 'POST', '/quotation', {
         body: {
@@ -384,7 +424,7 @@ async function pushToWeclapp(token, rec) {
             manualUnitPrice: true,
             positionNumber: i + 1,
             ...(l.project ? { title: l.name } : {}),
-            description: toHtml(`${i < rec.monthly.length ? 'Monatlich wiederkehrend' : 'Einmalig'}${rec.includeDetails ? `\n${l.desc}` : ''}`),
+            description: toHtml(`${i < rec.monthly.length ? T.monthlyLine : T.onceLine}${rec.includeDetails ? `\n${l.desc}` : ''}`),
           })),
         },
       }));

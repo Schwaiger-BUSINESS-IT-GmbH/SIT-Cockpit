@@ -1,0 +1,106 @@
+{
+  "_hinweis": "Englische Texte für das Angebotsboard (Kundenansicht, Angebot, PDF). Überschreibt nur Texte aus angebotsboard.json – Preise, Mengenstaffeln und Artikelnummern kommen immer aus angebotsboard.json. Übersetzung durch Claude, bitte fachlich prüfen.",
+  "company": { "address": "Wiener Straße 8 · 9400 Wolfsberg · Austria" },
+  "groupLabels": { "Security": "Security", "Managed Services": "Managed Services", "Managed Firewall": "Managed Firewall", "Support-Flatrates": "Support Flat Rates" },
+  "products": {
+    "secultimate": {
+      "name": "SIT Next Security – Ultimate Edition",
+      "unit": "endpoint",
+      "brief": "Kaspersky Next MXDR Optimum, 24/7 security monitoring, threat hunting and threat data feeds.",
+      "scope": "Scope of service as per the submitted description:\n• Managed Detection and Response based on Kaspersky Next MXDR Optimum\n• 24/7 security monitoring and threat hunting by security specialists\n• Analysis, prioritisation and support for security-relevant incidents\n• Behaviour-based detection, cloud sandboxing, IoC analysis and root cause analysis\n• Extended endpoint protection, hardening and vulnerability assessment features\n• Kaspersky Threat Data Feeds for URL and IP indicators\n• Security telemetry with a retention period of three months as described in the document\n• Operating time for ongoing security monitoring and assessment of alerts",
+      "exclusions": "24/7 security monitoring does not constitute guaranteed 24/7 availability of SIT support or a guaranteed recovery time. Actual response measures depend on the agreed service and technical possibilities."
+    },
+    "secprofessional": {
+      "name": "SIT Next Security Client Professional Edition",
+      "unit": "endpoint",
+      "brief": "Security edition – the detailed service description is still pending.",
+      "scope": "No approved service description available yet. Product scope, protection features, management, response processes and differentiation from the Ultimate Edition to be defined before the offer is released.",
+      "exclusions": "Features of the Ultimate Edition are not automatically included."
+    },
+    "secnode": {
+      "name": "SIT Next Security Client Node Edition",
+      "unit": "node",
+      "brief": "Node security edition – the detailed service description is still pending.",
+      "scope": "No approved service description available yet. Supported node types, licences, protection features, monitoring and response processes to be defined before the offer is released.",
+      "exclusions": "Features of the Professional or Ultimate Edition are not automatically included."
+    },
+    "clientpremium": {
+      "name": "SIT Managed Client Premium",
+      "unit": "client",
+      "brief": "Proactive system monitoring, patch management, remote administration and monthly reporting.",
+      "scope": "Intended scope of service as per the document \"Managed Client / Server\":\n• Continuous monitoring of CPU, RAM, storage, services and system events\n• Automatic alerting on detectable faults\n• Monitoring of missing security updates and scheduled Windows updates\n• Documentation of the patch status and agreed maintenance windows\n• Remote administration, fault analysis and restart/service management\n• Automated system checks, cleanup of temporary files and review of security-relevant settings\n• Monthly system status report and documentation of administrative activities",
+      "exclusions": "No dedicated Premium SLA commitments in the document. Scope of any user support services and differentiation from the separate Client Flat Rate to be checked before release. 24/7 monitoring is not a 24/7 staffed SIT service hotline."
+    },
+    "serverpremium": {
+      "name": "SIT Managed Server Premium",
+      "unit": "server",
+      "brief": "Proactive server operation with monitoring, patch management, maintenance automation and reporting.",
+      "scope": "Intended scope of service as per the document \"Managed Client / Server\":\n• 24/7 technical system monitoring with status checks of relevant resources, services and processes\n• Automatic alerting on technical faults\n• Scheduled updates and patch status documentation\n• Secure remote administration including diagnostics, restart and service management\n• Regular automated maintenance checks\n• Monthly server status and update report\n• Documentation of administrative activities",
+      "exclusions": "No dedicated Premium response times in the submitted Managed Client/Server document. Differentiation from the separate Server Flat Rate to be clarified. 24/7 monitoring does not automatically mean round-the-clock human standby."
+    },
+    "fwessential": {
+      "name": "SIT Managed Firewall Essential",
+      "unit": "FortiGate",
+      "brief": "Basic operation, monitoring, configuration backup, firmware maintenance and 30 minutes of changes.",
+      "scope": "FortiGate Managed Firewall – Essential:\n• Takeover and documentation of the agreed FortiGate\n• Monitoring of availability, operating status and relevant events\n• Ensuring configuration backups\n• Review and controlled installation of approved firmware\n• Ticket support and basic rule management\n• Up to 30 minutes of standard rule/NAT/VPN changes per month\n• Monthly short report",
+      "exclusions": "An active FortiGuard UTP licence is mandatory and must be financed separately by the customer. Not included: FortiGate hardware, LAN/Wi-Fi support beyond the firewall, on-site work, projects or separate SOC/MDR services. Changes exceeding 30 minutes are charged separately."
+    },
+    "fwbusiness": {
+      "name": "SIT Managed Firewall Business",
+      "unit": "FortiGate",
+      "brief": "Essential services plus extended VPN/policy support, 60 minutes of changes and a quarterly review.",
+      "scope": "FortiGate Managed Firewall – Business:\n• All basic services from Essential\n• Up to 60 minutes of standard changes per month\n• Extended policy and VPN support\n• Prioritised handling of firewall faults\n• Quarterly firewall service review\n• Extended reporting on operation, changes and anomalies",
+      "exclusions": "An active FortiGuard UTP licence is required separately. Hardware, third-party infrastructure, on-site work, project services and SOC/MDR services are not included. Major redesigns and change effort exceeding 60 minutes are charged separately."
+    },
+    "fwpremium": {
+      "name": "SIT Managed Firewall Premium",
+      "unit": "FortiGate",
+      "brief": "Business services plus 120 minutes of changes, complex scenarios and in-depth reviews.",
+      "scope": "FortiGate Managed Firewall – Premium:\n• All services from Business\n• Up to 120 minutes of standard changes per month\n• Support for complex firewall and VPN scenarios\n• Extended incident support within the scope of the firewall\n• Individual operational coordination as well as in-depth reviews and reporting",
+      "exclusions": "An active FortiGuard UTP licence is required separately. No device, provider or hardware costs. No unlimited change allowance and no 24/7 standby service included automatically."
+    },
+    "clientremote": {
+      "name": "SIT Client Flat Rate – Remote Support",
+      "unit": "client",
+      "brief": "Standardised client support, remote service, client management and IT operations support.",
+      "scope": "Scope of service as per the SIT Client Flat Rate:\n• Support of standardised desktop PCs and notebooks; mobile devices optional\n• Windows/macOS base configuration, integration into domain/Entra ID or MDM\n• User/device management as well as standardised reinstallation/replacement\n• Automated operating system and approved software updates\n• Continuous monitoring of relevant client states and proactive standard maintenance\n• Remote support via remote access, phone and e-mail\n• Support of standard applications such as Microsoft 365 and password/profile changes\n• According to the document: endpoint security, basic hardening and documented device inventory\n• No on-site visits in this item",
+      "exclusions": "Explicitly without on-site visits: travel and technician deployment on site are charged separately. No migrations, larger rollouts, special software, hardware repairs or user training. The document lists endpoint security as included; if an additional Next Security product is ordered, the delimitation must be checked. Documented service hours Mon–Thu 08:00–17:00, Fri 08:00–12:00, excluding public holidays."
+    },
+    "serverremote": {
+      "name": "SIT Server Flat Rate – Remote Support",
+      "unit": "server",
+      "brief": "Remote support for physical and virtual servers including operating tasks, updates and fault analysis.",
+      "scope": "Scope of service as per the SIT Server Flat Rate:\n• Support of supported physical and virtual servers (e.g. Hyper-V/VMware; Windows, Linux by agreement)\n• Basic server configuration and integration into existing infrastructure\n• Management of common services and permission structures\n• 24/7 system monitoring and scheduled maintenance\n• Operating system and security updates in the agreed maintenance window\n• Remote fault analysis, server-related troubleshooting and escalation management\n• Basic hardening, server security support and system documentation\n• Backup job monitoring only optionally if ordered separately\n• No on-site visits in this item",
+      "exclusions": "Explicitly without on-site visits: travel and technician deployment on site are charged separately. No projects, migrations, special applications, hardware, licences or disaster recovery work beyond the defined services. According to the document, service hours are Mon–Fri 08:00–17:00 (different from the hours on the website); to be aligned with the contract."
+    }
+  },
+  "sla": {
+    "labels": { "none": "No additional SLA", "standard": "Standard", "priority": "Priority", "premium": "Premium" },
+    "times": {
+      "standard": { "p1": "4 hours", "p2": "8 hours", "p3": "2 business days", "p4": "3 business days" },
+      "priority": { "p1": "2 hours", "p2": "4 hours", "p3": "1 business day", "p4": "2 business days" },
+      "premium": { "p1": "1 hour", "p2": "2 hours", "p3": "4 hours", "p4": "1 business day" }
+    },
+    "reviews": {
+      "annual": { "name": "Annual IT service review", "desc": "One annual IT service meeting including preparation and minutes within the agreed scope." },
+      "quarter": { "name": "Quarterly IT strategy support", "desc": "Four IT strategy and service meetings per year including preparation and minutes within the agreed scope." }
+    }
+  },
+  "texts": {
+    "slaBase": "Service level {label} – base fee",
+    "slaBaseDesc": "Contractual first-response targets during the agreed service hours, graded by incident priority (P1 {p1}, P2 {p2}, P3 {p3}, P4 {p4}). The response time is not a guaranteed resolution time.",
+    "slaUser": "Service level {label} – per user",
+    "slaUserDesc": "User-based share of the service level support.",
+    "site": "Additional site",
+    "siteDesc": "Surcharge per additional agreed operating site.",
+    "setup": "SLA setup and documentation",
+    "setupDesc": "One-time standard configuration and documentation, up to 1.5 hours.",
+    "projectDesc": "One-time additional project service as per separate description.",
+    "exclusionsLabel": "Scope limitations / prerequisites",
+    "units": { "Monat": "month", "User": "user", "Standort": "site", "einmalig": "one-time" },
+    "monthlyLine": "Monthly recurring",
+    "onceLine": "One-time"
+  },
+  "offerNotesPreview": "This document is a non-binding offer preview. Binding service scopes, minimum terms, service windows, response times, on-site scope, licences and exclusions are set out in the final contract or the approved service descriptions. No guaranteed resolution times are promised unless expressly agreed in writing. The client and server support flat rates do not include on-site visits. Prices are net plus applicable VAT.",
+  "offerNotesSigned": "By signing, the customer orders the listed services at the stated prices. The scope of services and limitations result from the service descriptions in this document or the approved service sheets. No guaranteed resolution times are promised unless expressly agreed in writing. The client and server support flat rates do not include on-site visits. Prices are net plus applicable VAT. The general terms and conditions of {firma} ({agb}) apply."
+}

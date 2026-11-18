@@ -207,3 +207,8 @@ body.kv .ob .internal-only { display: none !important; }
   .ob .score-row { grid-template-columns: 115px minmax(0, 1fr) 20px; gap: 7px; }
   .ob .foot-actions { flex-wrap: wrap; }
 }
+
+/* Sprachumschalter DE | EN */
+.ob .langswitch { display: inline-flex; gap: 4px; }
+.ob .langswitch .btn { min-width: 44px; }
+.ob .top .langswitch .btn[aria-pressed="true"] { background: var(--lime); color: var(--dark); border-color: var(--lime); }

@@ -118,13 +118,13 @@ api.get('/dashboard', h(async (req, res) => {
 }));
 
 // ---------- Angebotsboard ----------
-api.get('/offer/catalog', h(async (req, res) => res.json(await offers.catalog(req.session.token))));
+api.get('/offer/catalog', h(async (req, res) => res.json(await offers.catalog(req.session.token, req.query.lang))));
 api.get('/offer/customers', h(async (req, res) => res.json({ customers: await sales.searchCustomers(req.session.token, req.query.q) })));
 api.get('/offer/customers/:id', h(async (req, res) => res.json(await sales.customerContact(req.session.token, req.params.id))));
 api.post('/offer/calculate', h(async (req, res) => res.json(await offers.calculateChecked(req.session.token, req.body || {}))));
 api.post('/offer/preview', h(async (req, res) => {
   const pdf = await offers.previewPdf(req.body || {}, req.session);
-  res.type('application/pdf').setHeader('Content-Disposition', 'inline; filename="Angebot_Entwurf.pdf"');
+  res.type('application/pdf').setHeader('Content-Disposition', `inline; filename="${req.body?.lang === 'en' ? 'Offer_Draft' : 'Angebot_Entwurf'}.pdf"`);
   res.send(pdf);
 }));
 api.post('/offer/sign', h(async (req, res) => res.json(await offers.signAndCreate(req.session.token, req.body || {}, req.session))));

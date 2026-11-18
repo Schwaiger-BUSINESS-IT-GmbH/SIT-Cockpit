@@ -104,3 +104,22 @@ test('Paket ohne weclapp-Artikel wird Prüfpunkt und verlangt die interne Freiga
   const ok = await offers.calculateChecked('demo-rene', { products: [sel('clientpremium', 2)] });
   assert.ok(!ok.warnings.some((w) => /weclapp-Artikel/.test(w)));
 });
+
+test('Englisch: gleiche Preise, englische Texte in Positionen und Katalog', async () => {
+  const input = { sla: 'standard', assets: { users: 3, sites: 2 }, products: [sel('fwessential', 1)], project: { enabled: true, name: 'Migration', price: 100 } };
+  const de = offers.calculate({ ...input, lang: 'de' });
+  const en = offers.calculate({ ...input, lang: 'en' });
+  assert.deepEqual(en.totals, de.totals);
+  assert.equal(en.lang, 'en');
+  assert.equal(en.monthly[0].name, 'Service level Standard – base fee');
+  assert.match(en.monthly[0].desc, /P1 4 hours/);
+  assert.equal(en.monthly.find((l) => l.sku === 'SIT-MFW-ESS').unit, 'FortiGate');
+  assert.match(en.monthly.find((l) => l.sku === 'SIT-MFW-ESS').desc, /Scope limitations \/ prerequisites/);
+  assert.equal(en.once.find((l) => l.project).unit, 'one-time');
+  const cat = await offers.catalog('demo-rene', 'en');
+  assert.equal(cat.lang, 'en');
+  assert.equal(cat.groupLabels['Support-Flatrates'], 'Support Flat Rates');
+  assert.equal(cat.products.find((p) => p.id === 'clientremote').name, 'SIT Client Flat Rate – Remote Support');
+  const pdf = await offers.previewPdf({ ...input, lang: 'en' }, { name: 'Test' });
+  assert.ok(pdf.length > 3000);
+});

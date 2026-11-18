@@ -1,7 +1,6 @@
 // Angebotsboard im Stil von SIT_Angebotsboard_V4 – mit weclapp-Kunden, Entwürfen
 // am Server, Unterschrift am Tablet und Onboarding-Checkliste je Auftrag.
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const amt = (n) => new Intl.NumberFormat('de-AT', { style: 'currency', currency: 'EUR', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(n) || 0);
 const count = (n) => (Number.isFinite(Number(n)) ? Math.max(0, Math.floor(Number(n))) : 0);
 const money = (n) => (Number.isFinite(Number(n)) ? Math.max(0, Number(n)) : 0);
 const STEPS = ['Kundendaten', 'Interne Einstufung', 'Serviceauswahl', 'Angebot', 'Unterschrift', 'Onboarding'];
@@ -20,7 +19,97 @@ let serverWarnings = [];
 let pad = null;
 let custSearchTimer, warnTimer;
 
+// ---------- Sprache (alles, was der Kunde sieht; Internes bleibt deutsch) ----------
+const UI = {
+  de: {
+    steps: ['Kundendaten', 'Interne Einstufung', 'Serviceauswahl', 'Angebot', 'Unterschrift', 'Onboarding'],
+    internalApp: 'INTERNE ANWENDUNG', customerView: 'KUNDENANSICHT', toCustomer: 'Zur Kundenansicht', endCustomer: 'Kundenansicht beenden',
+    heroEyebrow: 'KUNDEN-ONBOARDING', heroTitle: 'Ihre IT. <span>Unser Plan.</span>', heroText: 'Vom ersten Gespräch bis zum kalkulierten Managed-Service-Angebot. Klar, nachvollziehbar und auf Ihren Betrieb abgestimmt.', heroNoteB: 'Erst wofür. Dann womit.', heroNote: 'Beratung · Umsetzung · Betreuung',
+    mCustomer: 'Kunde', newCustomer: 'Neukunde', users: (n) => `${n} Benutzer`, mSla: 'Service-Level', mSlaSub: 'Separat kalkuliert', mMonthly: 'Monatlich netto', mMonthlySub: 'Inkl. Managed Services', mOnboard: 'Onboarding', mOnboardDone: 'Abgeschlossene Schritte', mOnboardAfter: 'Nach Unterschrift',
+    back: '← Zurück', next: 'Weiter →', stepOf: (a, b) => `Schritt ${a} von ${b}`,
+    s1Eyebrow: '01 · Erstaufnahme', s1Title: 'Wofür braucht Ihr Betrieb IT?', s1Lead: 'Wir beginnen beim Unternehmen, nicht beim Produkt. Danach entsteht aus Anzahl, Bedarf und Betreuung eine nachvollziehbare Kalkulation.',
+    yourCompany: 'Ihr Unternehmen', company: 'Unternehmen', contact: 'Ansprechpartner', mail: 'E-Mail', phone: 'Telefon', place: 'Ort / Hauptstandort', placePh: 'Österreich', namePh: 'Vorname Nachname',
+    itEnv: 'IT-Umgebung', aUsers: 'Benutzer', aClients: 'Clients / PCs', aServers: 'Server', aFw: 'FortiGate-Firewalls', aSites: 'Standorte',
+    itHint: 'Die Benutzeranzahl steuert den SLA-Zuschlag. Die Mengen für Managed Services werden separat gewählt und können vom Inventar abweichen.',
+    goals: 'Ziele, Probleme und bestehende Betreuung', goalsPh: 'Was funktioniert gut? Was soll verbessert werden? Bestehende Verträge, Migrationsbedarf …',
+    s3Eyebrow: '03 · Serviceauswahl', s3Title: 'Erst wofür. Dann womit.', s3Lead: 'Wählen Sie die benötigten Managed Services. Staffelpreise werden automatisch berücksichtigt. Alle Beträge netto und monatlich, sofern nicht anders gekennzeichnet.',
+    slaHead: 'Service-Level – bei Bedarf zusätzlich', perUser: (v) => `+ ${v} je Benutzer / Monat`, p1: (v) => `P1-Reaktion: ${v}`,
+    noSla: 'Kein zusätzliches SLA', noSlaSub: 'Es gelten ausschließlich bereits wirksam vereinbarte produktspezifische Bedingungen oder individuelle Vereinbarungen.',
+    review: 'Zusätzliches IT-Review', reviewNone: 'Keines', reviewAnnual: (v) => `Jährlich +${v}/Monat`, reviewQuarter: (v) => `Quartalsweise +${v}/Monat`,
+    setupCheck: (v) => `Einmalige SLA-Einrichtung – ${v}`, setupSub: 'Wird nur bei Auswahl eines zusätzlichen SLAs verrechnet.',
+    compare: 'Reaktionszeiten aller SLA-Pakete vergleichen', prio: 'Priorität', prios: ['P1 – kritisch', 'P2 – hoch', 'P3 – normal', 'P4 – niedrig'], compareNote: 'Qualifizierte Erstreaktion während vertraglich vereinbarter Supportzeiten, keine garantierte Problemlösung.',
+    catalog: 'Managed-Service-Katalog', suggestQty: 'Bestandsmengen vorschlagen', articles: (n) => `${n} Artikel`,
+    perUnit: (u) => `je ${u}`, netPer: (u) => `netto / ${u} / Monat`, tierActive: 'Staffelpreis aktiv', tierFrom: (n, v) => `ab ${n} Stück: ${v}`, less: 'weniger', more: 'mehr', qtyOf: 'Anzahl', select: 'auswählen',
+    details: 'Leistungsumfang und Abgrenzung', scope: 'Leistungsumfang', excl: 'Nicht enthalten / Voraussetzungen',
+    project: 'Einmaliges Projekt / Sondereinrichtung', projectCheck: 'Zusätzliche Projektposition aufnehmen', projectName: 'Projektbezeichnung', projectPh: 'z. B. Microsoft-365-Migration', projectPrice: 'Einmaliger Preis netto',
+    s4Eyebrow: '04 · Angebotsvorschau', s4Title: 'Ein Angebot, das Vertrauen schafft.', s4Lead: 'Nur kundenfähige Informationen erscheinen im Angebot.',
+    showDetails: 'Leistungsbeschreibungen im Angebot anzeigen', showDetailsSub: 'Je nach Umfang kann das PDF dadurch mehrere Seiten enthalten.',
+    draftPill: 'Angebotsentwurf', docTitle: 'IT-Betreuung und Managed Services', for: 'Für:', assetsLine: (a) => `${a.users} Benutzer · ${a.clients} Clients · ${a.servers} Server · ${a.firewalls} FortiGate · ${a.sites} ${a.sites === 1 ? 'Standort' : 'Standorte'}`,
+    monthlyHead: 'Monatlich wiederkehrende Dienstleistungen', onceHead: 'Einmalige Dienstleistungen', none: 'Keine Positionen gewählt.', thService: 'Leistung', thQty: 'Menge', thPrice: 'Einzelpreis', thSum: 'Summe',
+    monthlyNet: 'Monatlicher Nettobetrag', onceNet: 'Einmaliger Nettobetrag', firstNet: 'Erster Abrechnungsmonat netto', vat: (p) => `${p} % USt. (Standardfall Inland)`, firstGross: 'Erster Abrechnungsmonat brutto', arr: 'Wiederkehrender Jahreswert netto',
+    notesHead: 'Leistungs- und Vertragsabgrenzung', extra: 'Zusatzanmerkungen:', notes: 'Anmerkungen zum Angebot', notesPh: 'Optionale Hinweise, z. B. Leistungsbeginn …',
+    pdf: 'PDF-Vorschau', toSign: 'Weiter zur Unterschrift →',
+    s5Eyebrow: '05 · Beauftragung', s5Title: 'Unterschreiben und loslegen.', s5Lead: 'Mit der Unterschrift wird das Angebot angenommen und als Auftrag übernommen. Sie erhalten das unterschriebene PDF.',
+    signer: 'Name der unterschreibenden Person *', role: 'Funktion', rolePh: 'z. B. Geschäftsführung', copyMail: 'E-Mail für die Auftragskopie', signature: 'Unterschrift *', signHint: 'Hier mit dem Finger oder Stift unterschreiben', clearSign: 'Unterschrift löschen',
+    accept: 'Ich beauftrage die angeführten Leistungen zu den genannten Konditionen.', terms: (url, firm) => `Es gelten die <a href="${url}" target="_blank" rel="noopener">AGB von ${firm}</a>.`, signBtn: 'Verbindlich beauftragen', sending: 'Wird übertragen …',
+    errName: 'Name der unterschreibenden Person fehlt', errSig: 'Unterschrift fehlt', errAccept: 'Bitte die Beauftragung bestätigen', errReady: 'Offene Prüfpunkte: im Schritt „Angebot“ intern freigeben',
+    done: 'Auftrag erteilt', signedBy: (c, n, d) => `${c} · unterschrieben von ${n} am ${d}`, monthlyNetShort: 'monatlich netto', onceShort: 'einmalig', openPdf: 'PDF öffnen', mailBtn: 'E-Mail an Kunden', toOnboard: 'Weiter zum Onboarding →', retry: 'Erneut an weclapp senden',
+    mailSubject: (n) => `Ihr Auftrag IT-Betreuung und Managed Services${n ? ` Nr. ${n}` : ''}`,
+    mailBody: (name, m, o, me, firm) => `Guten Tag ${name},\n\nvielen Dank für Ihren Auftrag. Im Anhang finden Sie die unterschriebene Auftragsübersicht.\n\nMonatlich: ${m} netto\nEinmalig: ${o} netto\n\nMit freundlichen Grüßen\n${me}\n${firm}`,
+    sideTitle: 'Ihre Kalkulation', sideHead: 'Planbare IT-Kosten.', sideMonthlySub: 'Wiederkehrender Vertragswert', sideArr: 'Jahreswert netto', sideArrSub: '12 Monate ohne einmalige Leistungen', sideOnce: 'Einmalig', sideFirstNet: 'Erster Monat netto', sideFirstGross: 'Erster Monat brutto',
+    config: 'Konfiguration', products: 'Gewählte Produkte', viewOffer: 'Angebot ansehen', once: 'Einmalig',
+  },
+  en: {
+    steps: ['Company details', 'Internal rating', 'Services', 'Offer', 'Signature', 'Onboarding'],
+    internalApp: 'INTERNAL VIEW', customerView: 'CUSTOMER VIEW', toCustomer: 'Customer view', endCustomer: 'End customer view',
+    heroEyebrow: 'CUSTOMER ONBOARDING', heroTitle: 'Your IT. <span>Our plan.</span>', heroText: 'From the first conversation to a calculated managed services offer. Clear, transparent and tailored to your business.', heroNoteB: 'First why. Then how.', heroNote: 'Consulting · Implementation · Support',
+    mCustomer: 'Customer', newCustomer: 'New customer', users: (n) => `${n} ${n === 1 ? 'user' : 'users'}`, mSla: 'Service level', mSlaSub: 'Calculated separately', mMonthly: 'Monthly net', mMonthlySub: 'Incl. managed services', mOnboard: 'Onboarding', mOnboardDone: 'Steps completed', mOnboardAfter: 'After signature',
+    back: '← Back', next: 'Next →', stepOf: (a, b) => `Step ${a} of ${b}`,
+    s1Eyebrow: '01 · Initial assessment', s1Title: 'What does your business need IT for?', s1Lead: 'We start with your company, not with the product. Based on size, needs and support, we then create a transparent calculation.',
+    yourCompany: 'Your company', company: 'Company', contact: 'Contact person', mail: 'E-mail', phone: 'Phone', place: 'City / main site', placePh: 'Austria', namePh: 'First name Last name',
+    itEnv: 'IT environment', aUsers: 'Users', aClients: 'Clients / PCs', aServers: 'Servers', aFw: 'FortiGate firewalls', aSites: 'Sites',
+    itHint: 'The number of users determines the SLA surcharge. Quantities for managed services are selected separately and may differ from the inventory.',
+    goals: 'Goals, issues and current support', goalsPh: 'What works well? What should be improved? Existing contracts, migration needs …',
+    s3Eyebrow: '03 · Service selection', s3Title: 'First why. Then how.', s3Lead: 'Select the managed services you need. Volume prices are applied automatically. All amounts are net and monthly unless stated otherwise.',
+    slaHead: 'Service level – optional add-on', perUser: (v) => `+ ${v} per user / month`, p1: (v) => `P1 response: ${v}`,
+    noSla: 'No additional SLA', noSlaSub: 'Only product-specific terms already agreed or individual agreements apply.',
+    review: 'Additional IT review', reviewNone: 'None', reviewAnnual: (v) => `Annual +${v}/month`, reviewQuarter: (v) => `Quarterly +${v}/month`,
+    setupCheck: (v) => `One-time SLA setup – ${v}`, setupSub: 'Only charged if an additional SLA is selected.',
+    compare: 'Compare response times of all SLA packages', prio: 'Priority', prios: ['P1 – critical', 'P2 – high', 'P3 – normal', 'P4 – low'], compareNote: 'Qualified first response during contractually agreed support hours, not a guaranteed resolution.',
+    catalog: 'Managed services catalogue', suggestQty: 'Suggest quantities from inventory', articles: (n) => `${n} items`,
+    perUnit: (u) => `per ${u}`, netPer: (u) => `net / ${u} / month`, tierActive: 'Volume price applied', tierFrom: (n, v) => `from ${n} units: ${v}`, less: 'less', more: 'more', qtyOf: 'Quantity', select: 'select',
+    details: 'Scope of service and limitations', scope: 'Scope of service', excl: 'Not included / prerequisites',
+    project: 'One-time project / special setup', projectCheck: 'Add a project item', projectName: 'Project name', projectPh: 'e.g. Microsoft 365 migration', projectPrice: 'One-time price net',
+    s4Eyebrow: '04 · Offer preview', s4Title: 'An offer you can trust.', s4Lead: 'Only customer-relevant information appears in the offer.',
+    showDetails: 'Show service descriptions in the offer', showDetailsSub: 'Depending on the scope, the PDF may have several pages.',
+    draftPill: 'Offer draft', docTitle: 'IT Support and Managed Services', for: 'For:', assetsLine: (a) => `${a.users} ${a.users === 1 ? 'user' : 'users'} · ${a.clients} ${a.clients === 1 ? 'client' : 'clients'} · ${a.servers} ${a.servers === 1 ? 'server' : 'servers'} · ${a.firewalls} FortiGate · ${a.sites} ${a.sites === 1 ? 'site' : 'sites'}`,
+    monthlyHead: 'Monthly recurring services', onceHead: 'One-time services', none: 'No items selected.', thService: 'Service', thQty: 'Qty', thPrice: 'Unit price', thSum: 'Total',
+    monthlyNet: 'Monthly net amount', onceNet: 'One-time net amount', firstNet: 'First billing month net', vat: (p) => `${p} % VAT (domestic standard rate)`, firstGross: 'First billing month gross', arr: 'Recurring annual value net',
+    notesHead: 'Scope of services and contractual limitations', extra: 'Additional notes:', notes: 'Notes on the offer', notesPh: 'Optional notes, e.g. start of service …',
+    pdf: 'PDF preview', toSign: 'Continue to signature →',
+    s5Eyebrow: '05 · Order', s5Title: 'Sign and get started.', s5Lead: 'With your signature the offer is accepted and placed as an order. You will receive the signed PDF.',
+    signer: 'Name of signatory *', role: 'Position', rolePh: 'e.g. Managing Director', copyMail: 'E-mail for the order copy', signature: 'Signature *', signHint: 'Sign here with your finger or a stylus', clearSign: 'Clear signature',
+    accept: 'I hereby order the listed services at the stated conditions.', terms: (url, firm) => `The <a href="${url}" target="_blank" rel="noopener">general terms and conditions of ${firm}</a> apply.`, signBtn: 'Place binding order', sending: 'Submitting …',
+    errName: 'Name of signatory is missing', errSig: 'Signature is missing', errAccept: 'Please confirm the order', errReady: 'Open review items: internal approval required in step “Offer”',
+    done: 'Order placed', signedBy: (c, n, d) => `${c} · signed by ${n} on ${d}`, monthlyNetShort: 'monthly net', onceShort: 'one-time', openPdf: 'Open PDF', mailBtn: 'E-mail to customer', toOnboard: 'Continue to onboarding →', retry: 'Send to weclapp again',
+    mailSubject: (n) => `Your order: IT support and managed services${n ? ` no. ${n}` : ''}`,
+    mailBody: (name, m, o, me, firm) => `Dear ${name},\n\nthank you for your order. Please find the signed order summary attached.\n\nMonthly: ${m} net\nOne-time: ${o} net\n\nKind regards\n${me}\n${firm}`,
+    sideTitle: 'Your calculation', sideHead: 'Predictable IT costs.', sideMonthlySub: 'Recurring contract value', sideArr: 'Annual value net', sideArrSub: '12 months excluding one-time services', sideOnce: 'One-time', sideFirstNet: 'First month net', sideFirstGross: 'First month gross',
+    config: 'Configuration', products: 'Selected products', viewOffer: 'View offer', once: 'One-time',
+  },
+};
+const lang = () => (st?.lang === 'en' ? 'en' : 'de');
+const tr = (k, ...a) => { const v = UI[lang()][k] ?? UI.de[k]; return typeof v === 'function' ? v(...a) : v; };
+const LOC = () => (lang() === 'en' ? 'en-GB' : 'de-AT');
+const amt = (n) => new Intl.NumberFormat(LOC(), { style: 'currency', currency: 'EUR', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(n) || 0);
+const catCache = {};
+async function loadCatalog(l) {
+  if (!catCache[l]) catCache[l] = await ctx.api('/offer/catalog?lang=' + l);
+  cat = catCache[l];
+}
+
 const fresh = () => ({
+  lang: st?.lang || 'de',
   draftId: null,
   customer: { id: null, number: '', company: '', contact: '', mail: '', phone: '', place: '' },
   assets: { users: 10, clients: 10, servers: 1, firewalls: 1, sites: 1 },
@@ -44,7 +133,7 @@ export async function renderBoard(container, context) {
   root = container;
   if (!cat) {
     root.innerHTML = '<p class="loading" style="padding:28px">Lade Angebotsboard …</p>';
-    try { cat = await ctx.api('/offer/catalog'); } catch (e) {
+    try { await loadCatalog(st?.lang || 'de'); } catch (e) {
       root.innerHTML = `<div class="banner crit" style="margin:28px"><div><b>Angebotsboard konnte nicht geladen werden</b>${esc(e.message)}</div></div>`;
       return;
     }
@@ -59,7 +148,6 @@ export async function renderBoard(container, context) {
   }
   render();
 }
-
 export function leaveBoard() {
   document.body.classList.remove('kv');
 }
@@ -67,22 +155,24 @@ export function leaveBoard() {
 // ---------- Berechnung (Anzeige; verbindlich rechnet der Server) ----------
 function itemData() {
   const monthly = [], once = [];
+  const T = cat.texts || {}, U = (u) => T.units?.[u] || u;
+  const fill = (t, v) => String(t || '').replace(/\{(\w+)\}/g, (m, k) => (k in v ? v[k] : m));
   if (st.sla !== 'none') {
     const r = cat.sla.rates[st.sla], label = cat.sla.labels[st.sla];
-    monthly.push({ sku: 'SLA', name: `Service-Level ${label} – Grundgebühr`, qty: 1, unit: 'Monat', price: r.base, desc: `Erstreaktionsziele: P1 ${r.p1}, P2 ${r.p2}, P3 ${r.p3}, P4 ${r.p4}. Die Reaktionszeit ist keine garantierte Entstörungszeit.` });
-    if (count(st.assets.users)) monthly.push({ sku: 'SLA', name: `Service-Level ${label} – Benutzer`, qty: count(st.assets.users), unit: 'User', price: r.user, desc: 'Benutzerabhängiger Anteil der Service-Level-Betreuung.' });
-    if (count(st.assets.sites) > 1) monthly.push({ sku: 'SLA', name: 'Zusätzlicher Standort', qty: count(st.assets.sites) - 1, unit: 'Standort', price: cat.sla.site, desc: 'Zuschlag je weiterem vereinbartem Betriebsstandort.' });
-    if (st.review === 'annual') monthly.push({ sku: 'REVIEW', name: 'Jährliches IT-Service-Review', qty: 1, unit: 'Monat', price: cat.sla.reviews.annual, desc: 'Ein jährliches IT-Servicegespräch mit Vorbereitung und Ergebnisprotokoll.' });
-    if (st.review === 'quarter') monthly.push({ sku: 'REVIEW', name: 'Quartalsweise IT-Strategiebetreuung', qty: 1, unit: 'Monat', price: cat.sla.reviews.quarter, desc: 'Vier IT-Strategie- und Servicegespräche pro Jahr inklusive Vorbereitung und Protokoll.' });
-    if (st.setup) once.push({ sku: 'SETUP', name: 'SLA-Einrichtung und Dokumentation', qty: 1, unit: 'einmalig', price: cat.sla.setup, desc: 'Einmalige Standardkonfiguration und Dokumentation, bis zu 1,5 Stunden.' });
+    monthly.push({ name: fill(T.slaBase, { label }), qty: 1, unit: U('Monat'), price: r.base, desc: fill(T.slaBaseDesc, r) });
+    if (count(st.assets.users)) monthly.push({ name: fill(T.slaUser, { label }), qty: count(st.assets.users), unit: U('User'), price: r.user, desc: T.slaUserDesc });
+    if (count(st.assets.sites) > 1) monthly.push({ name: T.site, qty: count(st.assets.sites) - 1, unit: U('Standort'), price: cat.sla.site, desc: T.siteDesc });
+    const rv = cat.sla.reviewTexts?.[st.review];
+    if (rv) monthly.push({ name: rv.name, qty: 1, unit: U('Monat'), price: cat.sla.reviews[st.review], desc: rv.desc });
+    if (st.setup) once.push({ name: T.setup, qty: 1, unit: U('einmalig'), price: cat.sla.setup, desc: T.setupDesc });
   }
   for (const p of cat.products) {
     const s = st.products.find((x) => x.id === p.id);
     if (!s?.selected || !count(s.qty)) continue;
     const price = p.threshold && count(s.qty) >= p.threshold ? p.tier : p.price;
-    monthly.push({ sku: p.sku, name: p.name, qty: count(s.qty), unit: p.unit, price, desc: s.custom.trim() || `${p.scope}\n\nAbgrenzung / Voraussetzungen:\n${p.exclusions}` });
+    monthly.push({ name: p.name, qty: count(s.qty), unit: p.unit, price, desc: s.custom.trim() || `${p.scope}\n\n${T.exclusionsLabel}:\n${p.exclusions}` });
   }
-  if (st.project.enabled && st.project.name.trim()) once.push({ sku: 'PROJEKT', name: st.project.name, qty: 1, unit: 'einmalig', price: money(st.project.price), desc: 'Einmalige zusätzliche Projektleistung gemäß separater Beschreibung.' });
+  if (st.project.enabled && st.project.name.trim()) once.push({ name: st.project.name, qty: 1, unit: U('einmalig'), price: money(st.project.price), desc: T.projectDesc });
   return { monthly, once };
 }
 function totals() {
@@ -115,16 +205,15 @@ const warnBox = () => (serverWarnings.length
 // ---------- Schritte ----------
 function customerStep() {
   const c = st.customer;
-  return `<span class="eyebrow">01 · Erstaufnahme</span><h2>Wofür braucht Ihr Betrieb IT?</h2><p class="lead">Wir beginnen beim Unternehmen, nicht beim Produkt. Danach entsteht aus Anzahl, Bedarf und Betreuung eine nachvollziehbare Kalkulation.</p>
-  <section class="section"><h3>Ihr Unternehmen</h3>
-    ${c.id ? `<div class="cust-pick"><span><strong>weclapp-Kunde${c.number ? ` ${esc(c.number)}` : ''}</strong><br><span class="subtle">Angebot und Auftrag werden bei diesem Kunden angelegt.</span></span><button class="btn btn-outline btn-small" data-action="unpick">Anderen Kunden wählen</button></div>`
+  return `<span class="eyebrow">${tr('s1Eyebrow')}</span><h2>${tr('s1Title')}</h2><p class="lead">${tr('s1Lead')}</p>
+  <section class="section"><h3>${tr('yourCompany')}</h3>
+    ${c.id ? `<div class="cust-pick internal-only"><span><strong>weclapp-Kunde${c.number ? ` ${esc(c.number)}` : ''}</strong><br><span class="subtle">Angebot und Auftrag werden bei diesem Kunden angelegt.</span></span><button class="btn btn-outline btn-small" data-action="unpick">Anderen Kunden wählen</button></div>`
     : `<div class="field internal-only"><label for="cust-q">Bestehenden Kunden in weclapp suchen</label><input id="cust-q" type="search" placeholder="Name oder Kundennummer …" autocomplete="off"></div><div id="cust-results" class="cust-results internal-only"></div><p class="subtle internal-only" style="margin:10px 0 16px">Oder als Neukunde erfassen. Der Kunde wird erst bei der Unterschrift in weclapp angelegt.</p>`}
-    <div class="g2">${field('Unternehmen', 'customer.company', c.company, 'text', 'Muster GmbH', c.id ? 'disabled' : '')}${field('Ansprechpartner', 'customer.contact', c.contact, 'text', 'Vorname Nachname')}${field('E-Mail', 'customer.mail', c.mail, 'email', 'office@firma.at')}${field('Telefon', 'customer.phone', c.phone, 'tel', '+43 …')}${field('Ort / Hauptstandort', 'customer.place', c.place, 'text', 'Österreich')}</div>
+    <div class="g2">${field(tr('company'), 'customer.company', c.company, 'text', 'Muster GmbH', c.id ? 'disabled' : '')}${field(tr('contact'), 'customer.contact', c.contact, 'text', tr('namePh'))}${field(tr('mail'), 'customer.mail', c.mail, 'email', 'office@firma.at')}${field(tr('phone'), 'customer.phone', c.phone, 'tel', '+43 …')}${field(tr('place'), 'customer.place', c.place, 'text', tr('placePh'))}</div>
   </section>
-  <section class="section"><h3>IT-Umgebung</h3><div class="g3">${field('Benutzer', 'assets.users', st.assets.users, 'number')}${field('Clients / PCs', 'assets.clients', st.assets.clients, 'number')}${field('Server', 'assets.servers', st.assets.servers, 'number')}${field('FortiGate-Firewalls', 'assets.firewalls', st.assets.firewalls, 'number')}${field('Standorte', 'assets.sites', st.assets.sites, 'number')}</div><p class="hint">Die Benutzeranzahl steuert den SLA-Zuschlag. Die Mengen für Managed Services werden separat gewählt und können vom Inventar abweichen.</p></section>
-  ${area('Ziele, Probleme und bestehende Betreuung', 'intakeNotes', st.intakeNotes, 'Was funktioniert gut? Was soll verbessert werden? Bestehende Verträge, Migrationsbedarf …')}`;
+  <section class="section"><h3>${tr('itEnv')}</h3><div class="g3">${field(tr('aUsers'), 'assets.users', st.assets.users, 'number')}${field(tr('aClients'), 'assets.clients', st.assets.clients, 'number')}${field(tr('aServers'), 'assets.servers', st.assets.servers, 'number')}${field(tr('aFw'), 'assets.firewalls', st.assets.firewalls, 'number')}${field(tr('aSites'), 'assets.sites', st.assets.sites, 'number')}</div><p class="hint">${tr('itHint')}</p></section>
+  ${area(tr('goals'), 'intakeNotes', st.intakeNotes, tr('goalsPh'))}`;
 }
-
 function internalStep() {
   return `<span class="eyebrow">02 · Interne Managemententscheidung</span><h2>Kundenbeziehung bewusst einordnen.</h2><p class="lead">Die Kategorie steuert die interne Kundenentwicklung. Sie bestimmt nicht automatisch den vertraglich zugesagten Servicelevel und erscheint nie im Angebot.</p>
   <div class="section"><div class="field"><label for="f-cat">Kundenkategorie – ausschließlich intern</label><select id="f-cat" data-path="internal.category">${['Gold', 'Silber', 'Bronze', 'Registered'].map((x) => `<option ${st.internal.category === x ? 'selected' : ''}>${x}</option>`).join('')}</select></div><div class="stripe"></div><h3>Entscheidungsdimensionen</h3>
@@ -135,85 +224,79 @@ function internalStep() {
 
 function planCard(key) {
   const r = cat.sla.rates[key], sel = st.sla === key;
-  return `<label class="plan ${sel ? 'active' : ''}"><input type="radio" name="sla" value="${key}" data-path="sla" ${sel ? 'checked' : ''}><div class="plan-title">${cat.sla.labels[key]}</div><div class="plan-price">${amt(r.base)}</div><div class="plan-meta">+ ${amt(r.user)} je Benutzer / Monat</div><div class="plan-badge">P1-Reaktion: ${esc(r.p1)}</div></label>`;
+  return `<label class="plan ${sel ? 'active' : ''}"><input type="radio" name="sla" value="${key}" data-path="sla" ${sel ? 'checked' : ''}><div class="plan-title">${esc(cat.sla.labels[key])}</div><div class="plan-price">${amt(r.base)}</div><div class="plan-meta">${tr('perUser', amt(r.user))}</div><div class="plan-badge">${tr('p1', esc(r.p1))}</div></label>`;
 }
-
 function productCard(p) {
   const s = st.products.find((x) => x.id === p.id);
   const q = count(s.qty), tier = p.threshold && q >= p.threshold, price = tier ? p.tier : p.price;
-  return `<article class="service ${s.selected ? 'active' : ''}" data-card="${p.id}"><div class="svc-head"><input type="checkbox" aria-label="${esc(p.name)} auswählen" data-path="products.${p.id}.selected" ${s.selected ? 'checked' : ''}><div><strong>${esc(p.name)}</strong><div class="subtle">${esc(p.sku)} · je ${esc(p.unit)}</div></div></div>
+  return `<article class="service ${s.selected ? 'active' : ''}" data-card="${p.id}"><div class="svc-head"><input type="checkbox" aria-label="${esc(p.name)} ${tr('select')}" data-path="products.${p.id}.selected" ${s.selected ? 'checked' : ''}><div><strong>${esc(p.name)}</strong><div class="subtle">${tr('perUnit', esc(p.unit))}</div></div></div>
   <p class="svc-desc">${esc(p.brief)}</p>
-  <div class="svc-footer"><div><div class="svc-price"><span data-price>${amt(price)}</span><small>netto / ${esc(p.unit)} / Monat</small></div>${p.threshold ? `<div class="svc-extra" data-tier>${tier ? 'Staffelpreis aktiv' : `ab ${p.threshold} Stück: ${amt(p.tier)}`}</div>` : ''}</div>
-  <div class="qty"><button type="button" data-action="dec" data-id="${p.id}" aria-label="${esc(p.name)} weniger">−</button><input type="number" min="0" step="1" inputmode="numeric" value="${q}" data-path="products.${p.id}.qty" aria-label="Anzahl ${esc(p.name)}"><button type="button" data-action="inc" data-id="${p.id}" aria-label="${esc(p.name)} mehr">+</button></div></div>
-  <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap" class="internal-only"><span class="pill ${p.verified ? '' : 'warn'}">${p.verified ? 'Dokumentengrundlage' : 'Beschreibung offen'}</span>${(cat.missingInWeclapp || []).includes(p.sku) ? '<span class="pill warn" title="In der Artikelzuordnung mit einem weclapp-Artikel verknüpfen">noch kein weclapp-Artikel</span>' : ''}</div>
-  <details><summary>Leistungsumfang und Abgrenzung</summary><div class="desc-section"><strong>Leistungsumfang</strong>\n${esc(p.scope)}</div><div class="desc-section"><strong>Nicht enthalten / Voraussetzungen</strong>\n${esc(p.exclusions)}</div>
+  <div class="svc-footer"><div><div class="svc-price"><span data-price>${amt(price)}</span><small>${tr('netPer', esc(p.unit))}</small></div>${p.threshold ? `<div class="svc-extra" data-tier>${tier ? tr('tierActive') : tr('tierFrom', p.threshold, amt(p.tier))}</div>` : ''}</div>
+  <div class="qty"><button type="button" data-action="dec" data-id="${p.id}" aria-label="${esc(p.name)} ${tr('less')}">−</button><input type="number" min="0" step="1" inputmode="numeric" value="${q}" data-path="products.${p.id}.qty" aria-label="${tr('qtyOf')} ${esc(p.name)}"><button type="button" data-action="inc" data-id="${p.id}" aria-label="${esc(p.name)} ${tr('more')}">+</button></div></div>
+  <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap" class="internal-only"><span class="subtle">${esc(p.sku)}</span><span class="pill ${p.verified ? '' : 'warn'}">${p.verified ? 'Dokumentengrundlage' : 'Beschreibung offen'}</span>${(cat.missingInWeclapp || []).includes(p.sku) ? '<span class="pill warn" title="In der Artikelzuordnung mit einem weclapp-Artikel verknüpfen">noch kein weclapp-Artikel</span>' : ''}</div>
+  <details><summary>${tr('details')}</summary><div class="desc-section"><strong>${tr('scope')}</strong>\n${esc(p.scope)}</div><div class="desc-section"><strong>${tr('excl')}</strong>\n${esc(p.exclusions)}</div>
   <div class="internal-only"><div class="subtle">Quelle: ${esc(p.source)}.</div>${p.sourceCaveat ? `<p class="hint warning">${esc(p.sourceCaveat)}</p>` : ''}<label class="detailslabel" for="custom-${p.id}">Individueller Beschreibungstext (optional)</label><textarea id="custom-${p.id}" data-path="products.${p.id}.custom" placeholder="Bei Bedarf vollständige Ersatzbeschreibung für das Angebot eingeben.">${esc(s.custom)}</textarea></div></details></article>`;
 }
-
 function productsStep() {
   const missing = cat.missingInWeclapp || [];
-  return `<span class="eyebrow">03 · Serviceauswahl</span><h2>Erst wofür. Dann womit.</h2><p class="lead">Wähle die benötigten Managed Services. Staffelpreise werden automatisch berücksichtigt. Alle Beträge netto und monatlich, sofern nicht anders gekennzeichnet.</p>
+  const gl = (g) => cat.groupLabels?.[g] || g;
+  return `<span class="eyebrow">${tr('s3Eyebrow')}</span><h2>${tr('s3Title')}</h2><p class="lead">${tr('s3Lead')}</p>
   ${missing.length ? `<div class="hint critical internal-only" style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:center"><span><strong>${missing.length} Board-Position(en) ohne weclapp-Artikel.</strong> Angebote mit diesen Positionen können nach der Unterschrift nicht angelegt werden (der Vorgang bleibt gespeichert).</span><button class="btn btn-outline btn-small" data-action="articles">Artikel zuordnen</button></div>` : ''}
   ${cat.weclappError ? `<div class="hint warning internal-only">Artikelabgleich mit weclapp nicht möglich: ${esc(cat.weclappError)}</div>` : ''}
-  <section class="section"><h3>Service-Level – bei Bedarf zusätzlich</h3><div class="plans">${['standard', 'priority', 'premium'].map(planCard).join('')}</div>
-  <label class="checkline"><input type="radio" name="sla" value="none" data-path="sla" ${st.sla === 'none' ? 'checked' : ''}><span><strong>Kein zusätzliches SLA</strong><small>Es gelten ausschließlich bereits wirksam vereinbarte produktspezifische Bedingungen oder individuelle Vereinbarungen.</small></span></label>
-  <div class="g2" style="margin-top:15px"><div class="field"><label for="f-review">Zusätzliches IT-Review</label><select id="f-review" data-path="review"><option value="none" ${st.review === 'none' ? 'selected' : ''}>Keines</option><option value="annual" ${st.review === 'annual' ? 'selected' : ''}>Jährlich +${amt(cat.sla.reviews.annual)}/Monat</option><option value="quarter" ${st.review === 'quarter' ? 'selected' : ''}>Quartalsweise +${amt(cat.sla.reviews.quarter)}/Monat</option></select></div></div>
-  ${check('setup', st.setup, `Einmalige SLA-Einrichtung – ${amt(cat.sla.setup)}`, 'Wird nur bei Auswahl eines zusätzlichen SLAs verrechnet.')}
-  <details><summary>Reaktionszeiten aller SLA-Pakete vergleichen</summary><div style="overflow:auto"><table class="cmp"><thead><tr><th>Priorität</th><th>Standard</th><th>Priority</th><th>Premium</th></tr></thead><tbody>${[['P1 – kritisch', 'p1'], ['P2 – hoch', 'p2'], ['P3 – normal', 'p3'], ['P4 – niedrig', 'p4']].map(([a, k]) => `<tr><td>${a}</td>${['standard', 'priority', 'premium'].map((s) => `<td>${esc(cat.sla.rates[s][k])}</td>`).join('')}</tr>`).join('')}</tbody></table></div><p class="subtle">Qualifizierte Erstreaktion während vertraglich vereinbarter Supportzeiten, keine garantierte Problemlösung.</p></details></section>
-  <div style="display:flex;justify-content:space-between;align-items:center;gap:9px;flex-wrap:wrap;margin:22px 0"><strong>Managed-Service-Katalog</strong><button class="btn btn-outline btn-small" data-action="quantities">Bestandsmengen vorschlagen</button></div>
-  ${cat.groups.map((g, i) => `<div class="category-head"><h3>${String(i + 1).padStart(2, '0')} · ${esc(g)}</h3><span class="subtle">${cat.products.filter((p) => p.group === g).length} Artikel</span></div><div class="service-grid">${cat.products.filter((p) => p.group === g).map(productCard).join('')}</div>`).join('')}
-  <section class="section" style="margin-top:27px"><h3>Einmaliges Projekt / Sondereinrichtung</h3>${check('project.enabled', st.project.enabled, 'Zusätzliche Projektposition aufnehmen')}<div class="g2">${field('Projektbezeichnung', 'project.name', st.project.name, 'text', 'z. B. Microsoft-365-Migration')}${field('Einmaliger Preis netto', 'project.price', st.project.price, 'number')}</div></section>
+  <section class="section"><h3>${tr('slaHead')}</h3><div class="plans">${['standard', 'priority', 'premium'].map(planCard).join('')}</div>
+  <label class="checkline"><input type="radio" name="sla" value="none" data-path="sla" ${st.sla === 'none' ? 'checked' : ''}><span><strong>${tr('noSla')}</strong><small>${tr('noSlaSub')}</small></span></label>
+  <div class="g2" style="margin-top:15px"><div class="field"><label for="f-review">${tr('review')}</label><select id="f-review" data-path="review"><option value="none" ${st.review === 'none' ? 'selected' : ''}>${tr('reviewNone')}</option><option value="annual" ${st.review === 'annual' ? 'selected' : ''}>${tr('reviewAnnual', amt(cat.sla.reviews.annual))}</option><option value="quarter" ${st.review === 'quarter' ? 'selected' : ''}>${tr('reviewQuarter', amt(cat.sla.reviews.quarter))}</option></select></div></div>
+  ${check('setup', st.setup, tr('setupCheck', amt(cat.sla.setup)), tr('setupSub'))}
+  <details><summary>${tr('compare')}</summary><div style="overflow:auto"><table class="cmp"><thead><tr><th>${tr('prio')}</th>${['standard', 'priority', 'premium'].map((s) => `<th>${esc(cat.sla.labels[s])}</th>`).join('')}</tr></thead><tbody>${['p1', 'p2', 'p3', 'p4'].map((k, i) => `<tr><td>${tr('prios')[i]}</td>${['standard', 'priority', 'premium'].map((s) => `<td>${esc(cat.sla.rates[s][k])}</td>`).join('')}</tr>`).join('')}</tbody></table></div><p class="subtle">${tr('compareNote')}</p></details></section>
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:9px;flex-wrap:wrap;margin:22px 0"><strong>${tr('catalog')}</strong><button class="btn btn-outline btn-small" data-action="quantities">${tr('suggestQty')}</button></div>
+  ${cat.groups.map((g, i) => `<div class="category-head"><h3>${String(i + 1).padStart(2, '0')} · ${esc(gl(g))}</h3><span class="subtle">${tr('articles', cat.products.filter((p) => p.group === g).length)}</span></div><div class="service-grid">${cat.products.filter((p) => p.group === g).map(productCard).join('')}</div>`).join('')}
+  <section class="section" style="margin-top:27px"><h3>${tr('project')}</h3>${check('project.enabled', st.project.enabled, tr('projectCheck'))}<div class="g2">${field(tr('projectName'), 'project.name', st.project.name, 'text', tr('projectPh'))}${field(tr('projectPrice'), 'project.price', st.project.price, 'number')}</div></section>
   ${warnBox()}`;
 }
-
 function table(items) {
-  if (!items.length) return '<p class="subtle">Keine Positionen gewählt.</p>';
-  return `<div class="offerwrap"><table><thead><tr><th>Leistung</th><th>Menge</th><th>Einzelpreis</th><th>Summe</th></tr></thead><tbody>${items.map((p) => `<tr><td><strong>${esc(p.name)}</strong>${st.includeDetails ? `<div class="detail">${esc(p.desc)}</div>` : ''}</td><td>${p.qty}</td><td>${amt(p.price)}</td><td><strong>${amt(p.qty * p.price)}</strong></td></tr>`).join('')}</tbody></table></div>`;
+  if (!items.length) return `<p class="subtle">${tr('none')}</p>`;
+  return `<div class="offerwrap"><table><thead><tr><th>${tr('thService')}</th><th>${tr('thQty')}</th><th>${tr('thPrice')}</th><th>${tr('thSum')}</th></tr></thead><tbody>${items.map((p) => `<tr><td><strong>${esc(p.name)}</strong>${st.includeDetails ? `<div class="detail">${esc(p.desc)}</div>` : ''}</td><td>${p.qty}</td><td>${amt(p.price)}</td><td><strong>${amt(p.qty * p.price)}</strong></td></tr>`).join('')}</tbody></table></div>`;
 }
-
 function offerDoc() {
-  const d = itemData(), t = totals(), c = st.customer, a = st.assets;
-  return `<article class="offer"><div class="offer-header"><div><img class="offer-logo" src="/img/logo-light-bg.png" alt="${esc(cat.company.name)}"><p class="subtle" style="margin:11px 0 0">${esc([cat.company.address, cat.company.email].filter(Boolean).join(' · '))}</p></div><span class="pill dark">Angebotsentwurf</span></div><div class="stripe"></div>
-  <h3>IT-Betreuung und Managed Services</h3><p><strong>Für:</strong> ${esc(c.company || 'Neukunde')}<br>${esc(c.contact)}${c.place ? ` · ${esc(c.place)}` : ''}<br><span class="subtle">${count(a.users)} Benutzer · ${count(a.clients)} Clients · ${count(a.servers)} Server · ${count(a.firewalls)} FortiGate · ${count(a.sites)} Standorte</span></p>
-  <h4>Monatlich wiederkehrende Dienstleistungen</h4>${table(d.monthly)}<div class="offer-summary"><div class="moneyline"><span>Monatlicher Nettobetrag</span><b>${amt(t.monthly)}</b></div></div>
-  <h4>Einmalige Dienstleistungen</h4>${table(d.once)}<div class="offer-summary"><div class="moneyline"><span>Einmaliger Nettobetrag</span><b>${amt(t.once)}</b></div><div class="moneyline"><span>Erster Abrechnungsmonat netto</span><b>${amt(t.first)}</b></div><div class="moneyline"><span>${cat.vatPercent} % USt. (Standardfall Inland)</span><b>${amt(t.vat)}</b></div><div class="moneyline"><strong>Erster Abrechnungsmonat brutto</strong><b>${amt(t.gross)}</b></div><div class="moneyline"><span>Wiederkehrender Jahreswert netto</span><b>${amt(t.arr)}</b></div></div>
-  <div class="offer-notes"><strong>Leistungs- und Vertragsabgrenzung</strong><p>${esc(cat.offerNotesPreview)}</p>${st.notes ? `<p><strong>Zusatzanmerkungen:</strong> ${esc(st.notes)}</p>` : ''}</div></article>`;
+  const d = itemData(), t = totals(), c = st.customer;
+  const a = Object.fromEntries(Object.entries(st.assets).map(([k, v]) => [k, count(v)]));
+  return `<article class="offer"><div class="offer-header"><div><img class="offer-logo" src="/img/logo-light-bg.png" alt="${esc(cat.company.name)}"><p class="subtle" style="margin:11px 0 0">${esc([cat.company.address, cat.company.email].filter(Boolean).join(' · '))}</p></div><span class="pill dark">${tr('draftPill')}</span></div><div class="stripe"></div>
+  <h3>${tr('docTitle')}</h3><p><strong>${tr('for')}</strong> ${esc(c.company || tr('newCustomer'))}<br>${esc(c.contact)}${c.place ? ` · ${esc(c.place)}` : ''}<br><span class="subtle">${tr('assetsLine', a)}</span></p>
+  <h4>${tr('monthlyHead')}</h4>${table(d.monthly)}<div class="offer-summary"><div class="moneyline"><span>${tr('monthlyNet')}</span><b>${amt(t.monthly)}</b></div></div>
+  <h4>${tr('onceHead')}</h4>${table(d.once)}<div class="offer-summary"><div class="moneyline"><span>${tr('onceNet')}</span><b>${amt(t.once)}</b></div><div class="moneyline"><span>${tr('firstNet')}</span><b>${amt(t.first)}</b></div><div class="moneyline"><span>${tr('vat', cat.vatPercent)}</span><b>${amt(t.vat)}</b></div><div class="moneyline"><strong>${tr('firstGross')}</strong><b>${amt(t.gross)}</b></div><div class="moneyline"><span>${tr('arr')}</span><b>${amt(t.arr)}</b></div></div>
+  <div class="offer-notes"><strong>${tr('notesHead')}</strong><p>${esc(cat.offerNotesPreview)}</p>${st.notes ? `<p><strong>${tr('extra')}</strong> ${esc(st.notes)}</p>` : ''}</div></article>`;
 }
-
 function quoteStep() {
-  return `<span class="eyebrow">04 · Angebotsvorschau</span><h2>Ein Angebot, das Vertrauen schafft.</h2><p class="lead">Nur kundenfähige Informationen erscheinen im Angebot. Die interne Kundenkategorie bleibt verborgen.</p>
-  <div style="margin-bottom:14px">${check('includeDetails', st.includeDetails, 'Leistungsbeschreibungen im Angebot anzeigen', 'Je nach Umfang kann das PDF dadurch mehrere Seiten enthalten.')}</div>
+  return `<span class="eyebrow">${tr('s4Eyebrow')}</span><h2>${tr('s4Title')}</h2><p class="lead">${tr('s4Lead')}</p>
+  <div style="margin-bottom:14px">${check('includeDetails', st.includeDetails, tr('showDetails'), tr('showDetailsSub'))}</div>
   ${offerDoc()}
   ${warnBox()}
-  <section class="section" style="margin-top:18px">${area('Anmerkungen zum Angebot', 'notes', st.notes, 'Optionale Hinweise für den Kunden, z. B. Leistungsbeginn …')}<div class="internal-only">${check('ready', st.ready, 'Intern zur Angebotserstellung geprüft', 'Pflicht, sobald Prüfpunkte offen sind. Vertragsbedingungen und Produktbeschreibungen freigeben.')}</div></section>
-  <div style="display:flex;flex-wrap:wrap;gap:10px"><button class="btn btn-outline" data-action="pdf">PDF-Vorschau</button><button class="btn btn-primary" data-action="tosign">Weiter zur Unterschrift →</button></div>`;
+  <section class="section" style="margin-top:18px">${area(tr('notes'), 'notes', st.notes, tr('notesPh'))}<div class="internal-only">${check('ready', st.ready, 'Intern zur Angebotserstellung geprüft', 'Pflicht, sobald Prüfpunkte offen sind. Vertragsbedingungen und Produktbeschreibungen freigeben.')}</div></section>
+  <div style="display:flex;flex-wrap:wrap;gap:10px"><button class="btn btn-outline" data-action="pdf">${tr('pdf')}</button><button class="btn btn-primary" data-action="tosign">${tr('toSign')}</button></div>`;
 }
-
 function signStep() {
   if (result) return doneBox();
   const t = totals();
-  return `<span class="eyebrow">05 · Beauftragung</span><h2>Unterschreiben und loslegen.</h2><p class="lead">Mit der Unterschrift wird das Angebot in weclapp angelegt, angenommen und als Auftrag übernommen. Das unterschriebene PDF wird angehängt.</p>
-  <section class="section"><div class="moneyline"><span>Monatlich netto</span><b>${amt(t.monthly)}</b></div><div class="moneyline"><span>Einmalig netto</span><b>${amt(t.once)}</b></div><div class="moneyline"><span>Erster Abrechnungsmonat brutto</span><b>${amt(t.gross)}</b></div></section>
-  <section class="section"><div class="g2">${field('Name der unterschreibenden Person *', 'signer.name', st.signer.name || st.customer.contact, 'text', 'Vorname Nachname')}${field('Funktion', 'signer.role', st.signer.role, 'text', 'z. B. Geschäftsführung')}</div>${field('E-Mail für die Auftragskopie', 'signer.email', st.signer.email || st.customer.mail, 'email')}
-  <div class="field" style="margin-top:12px"><label>Unterschrift *</label><div class="sign-wrap"><canvas id="sign" aria-label="Unterschriftsfeld"></canvas><div class="sign-line"></div><span class="sign-hint" id="sign-hint">Hier mit dem Finger oder Stift unterschreiben</span></div><div><button class="btn btn-outline btn-small" data-action="clearsign" style="margin-top:8px">Unterschrift löschen</button></div></div>
-  ${check('accepted', st.accepted, 'Ich beauftrage die angeführten Leistungen zu den genannten Konditionen.', `Es gelten die <a href="${esc(cat.termsUrl)}" target="_blank" rel="noopener">AGB von ${esc(cat.company.name)}</a>.`)}
+  return `<span class="eyebrow">${tr('s5Eyebrow')}</span><h2>${tr('s5Title')}</h2><p class="lead">${tr('s5Lead')}</p>
+  <section class="section"><div class="moneyline"><span>${tr('mMonthly')}</span><b>${amt(t.monthly)}</b></div><div class="moneyline"><span>${tr('onceNet')}</span><b>${amt(t.once)}</b></div><div class="moneyline"><span>${tr('firstGross')}</span><b>${amt(t.gross)}</b></div></section>
+  <section class="section"><div class="g2">${field(tr('signer'), 'signer.name', st.signer.name || st.customer.contact, 'text', tr('namePh'))}${field(tr('role'), 'signer.role', st.signer.role, 'text', tr('rolePh'))}</div>${field(tr('copyMail'), 'signer.email', st.signer.email || st.customer.mail, 'email')}
+  <div class="field" style="margin-top:12px"><label>${tr('signature')}</label><div class="sign-wrap"><canvas id="sign" aria-label="${tr('signature')}"></canvas><div class="sign-line"></div><span class="sign-hint" id="sign-hint">${tr('signHint')}</span></div><div><button class="btn btn-outline btn-small" data-action="clearsign" style="margin-top:8px">${tr('clearSign')}</button></div></div>
+  ${check('accepted', st.accepted, tr('accept'), tr('terms', esc(cat.termsUrl), esc(cat.company.name)))}
   <p id="sign-error" class="error" role="alert" hidden></p>
-  <button class="btn btn-primary btn-big" data-action="sign" id="sign-btn">Verbindlich beauftragen</button></section>`;
+  <button class="btn btn-primary btn-big" data-action="sign" id="sign-btn">${tr('signBtn')}</button></section>`;
 }
-
 function doneBox() {
   const r = result, w = r.weclapp || {};
   const mail = r.signer.email || r.customer.mail || '';
-  const subject = `Ihr Auftrag IT-Betreuung und Managed Services${w.salesOrderNumber ? ` Nr. ${w.salesOrderNumber}` : ''}`;
-  const body = `Guten Tag ${r.signer.name},\n\nvielen Dank für Ihren Auftrag. Im Anhang finden Sie die unterschriebene Auftragsübersicht.\n\nMonatlich: ${amt(r.totals.monthly)} netto\nEinmalig: ${amt(r.totals.once)} netto\n\nMit freundlichen Grüßen\n${ctx.me.user.name}\n${cat.company.name}`;
-  return `<section class="section" style="text-align:center;padding:34px 24px"><div class="done-check" aria-hidden="true">✓</div><h2 style="margin-top:14px">Auftrag erteilt</h2><p class="lead" style="margin:0 auto 10px">${esc(r.customer.company)} · unterschrieben von ${esc(r.signer.name)} am ${new Date(r.signedAt).toLocaleString('de-AT', { dateStyle: 'short', timeStyle: 'short' })}</p>
-  <p style="font-size:18px"><b>${amt(r.totals.monthly)}</b> monatlich netto${r.totals.once ? ` · <b>${amt(r.totals.once)}</b> einmalig` : ''}</p>
-  ${w.quotationNumber ? `<div class="hint" style="text-align:left"><strong>In weclapp angelegt:</strong> ${w.partyCreated ? `Neukunde ${esc(r.customer.number || '')} · ` : ''}Angebot ${esc(w.quotationNumber)} (angenommen)${w.salesOrderNumber ? ` · Auftrag ${esc(w.salesOrderNumber)}` : ''} · PDF angehängt.</div>` : ''}
-  ${r.warningsWeclapp?.length ? `<div class="hint warning" style="text-align:left"><strong>Bitte prüfen:</strong><ul>${r.warningsWeclapp.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>${w.quotationNumber ? '' : 'Die Unterschrift ist sicher gespeichert. Übertragung erneut starten, sobald das Problem behoben ist.'}</div>` : ''}
-  <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:16px"><a class="btn btn-primary btn-big" href="${esc(r.pdfUrl)}" target="_blank" rel="noopener">PDF öffnen</a>${mail ? `<a class="btn btn-outline btn-big" href="mailto:${esc(mail)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}">E-Mail an Kunden</a>` : ''}${!w.quotationNumber ? '<button class="btn btn-outline btn-big" data-action="retry">Erneut an weclapp senden</button>' : ''}<button class="btn btn-outline btn-big" data-action="toonboard">Weiter zum Onboarding →</button></div>
-  ${mail ? '<p class="subtle" style="margin-top:12px">Beim E-Mail-Versand das PDF bitte anhängen.</p>' : ''}</section>`;
+  const subject = tr('mailSubject', w.salesOrderNumber);
+  const body = tr('mailBody', r.signer.name, amt(r.totals.monthly), amt(r.totals.once), ctx.me.user.name, cat.company.name);
+  return `<section class="section" style="text-align:center;padding:34px 24px"><div class="done-check" aria-hidden="true">✓</div><h2 style="margin-top:14px">${tr('done')}</h2><p class="lead" style="margin:0 auto 10px">${esc(tr('signedBy', r.customer.company, r.signer.name, new Date(r.signedAt).toLocaleString(LOC(), { dateStyle: 'short', timeStyle: 'short' })))}</p>
+  <p style="font-size:18px"><b>${amt(r.totals.monthly)}</b> ${tr('monthlyNetShort')}${r.totals.once ? ` · <b>${amt(r.totals.once)}</b> ${tr('onceShort')}` : ''}</p>
+  ${w.quotationNumber ? `<div class="hint internal-only" style="text-align:left"><strong>In weclapp angelegt:</strong> ${w.partyCreated ? `Neukunde ${esc(r.customer.number || '')} · ` : ''}Angebot ${esc(w.quotationNumber)} (angenommen)${w.salesOrderNumber ? ` · Auftrag ${esc(w.salesOrderNumber)}` : ''} · PDF angehängt.</div>` : ''}
+  ${r.warningsWeclapp?.length ? `<div class="hint warning internal-only" style="text-align:left"><strong>Bitte prüfen:</strong><ul>${r.warningsWeclapp.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>${w.quotationNumber ? '' : 'Die Unterschrift ist sicher gespeichert. Übertragung erneut starten, sobald das Problem behoben ist.'}</div>` : ''}
+  <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:16px"><a class="btn btn-primary btn-big" href="${esc(r.pdfUrl)}" target="_blank" rel="noopener">${tr('openPdf')}</a>${mail ? `<a class="btn btn-outline btn-big internal-only" href="mailto:${esc(mail)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}">${tr('mailBtn')}</a>` : ''}${!w.quotationNumber ? `<button class="btn btn-outline btn-big internal-only" data-action="retry">${tr('retry')}</button>` : ''}<button class="btn btn-outline btn-big internal-only" data-action="toonboard">${tr('toOnboard')}</button></div>
+  ${mail ? '<p class="subtle internal-only" style="margin-top:12px">Beim E-Mail-Versand das PDF bitte anhängen.</p>' : ''}</section>`;
 }
-
 function onboardStep() {
   const checks = cat.onboardingChecks;
   if (!result) return `<span class="eyebrow">06 · Übergabe in den Regelbetrieb</span><h2>Vom Angebot zur laufenden Betreuung.</h2><div class="hint">Die Onboarding-Checkliste wird nach der Unterschrift mit dem Auftrag gespeichert.</div>`;
@@ -233,42 +316,41 @@ function draftsView(list) {
 
 function sidebar() {
   const t = totals();
-  return `<div class="sticky"><div class="summary-title">Ihre Kalkulation</div><h3 style="margin-bottom:16px">Planbare IT-Kosten.</h3>
-  <div class="moneycard"><span class="subtle">Monatlich netto</span><div class="big-number" data-live="monthly">${amt(t.monthly)}</div><p>Wiederkehrender Vertragswert</p></div>
-  <div class="moneycard"><span class="subtle">Jahreswert netto</span><div class="big-number" style="font-size:27px" data-live="arr">${amt(t.arr)}</div><p>12 Monate ohne einmalige Leistungen</p></div>
-  <div class="moneyline"><span>Einmalig</span><b data-live="once">${amt(t.once)}</b></div><div class="moneyline"><span>Erster Monat netto</span><b data-live="first">${amt(t.first)}</b></div><div class="moneyline"><span>Erster Monat brutto</span><b data-live="gross">${amt(t.gross)}</b></div>
-  <div class="section-title">Konfiguration</div><div class="moneyline"><span>Benutzer</span><b data-live="users">${count(st.assets.users)}</b></div><div class="moneyline"><span>Service-Level</span><b>${cat.sla.labels[st.sla]}</b></div><div class="moneyline"><span>Gewählte Produkte</span><b>${st.products.filter((p) => p.selected && count(p.qty) > 0).length}</b></div>
+  return `<div class="sticky"><div class="summary-title">${tr('sideTitle')}</div><h3 style="margin-bottom:16px">${tr('sideHead')}</h3>
+  <div class="moneycard"><span class="subtle">${tr('mMonthly')}</span><div class="big-number" data-live="monthly">${amt(t.monthly)}</div><p>${tr('sideMonthlySub')}</p></div>
+  <div class="moneycard"><span class="subtle">${tr('sideArr')}</span><div class="big-number" style="font-size:27px" data-live="arr">${amt(t.arr)}</div><p>${tr('sideArrSub')}</p></div>
+  <div class="moneyline"><span>${tr('sideOnce')}</span><b data-live="once">${amt(t.once)}</b></div><div class="moneyline"><span>${tr('sideFirstNet')}</span><b data-live="first">${amt(t.first)}</b></div><div class="moneyline"><span>${tr('sideFirstGross')}</span><b data-live="gross">${amt(t.gross)}</b></div>
+  <div class="section-title">${tr('config')}</div><div class="moneyline"><span>${tr('aUsers')}</span><b data-live="users">${count(st.assets.users)}</b></div><div class="moneyline"><span>${tr('mSla')}</span><b>${esc(cat.sla.labels[st.sla])}</b></div><div class="moneyline"><span>${tr('products')}</span><b>${st.products.filter((p) => p.selected && count(p.qty) > 0).length}</b></div>
   <div class="moneyline internal-only"><span>Interne Kategorie</span><b>${esc(st.internal.category)}</b></div>
-  <div class="sidelinks" style="margin-top:22px">${result ? '' : '<button class="btn btn-primary" data-action="offer">Angebot ansehen</button>'}<button class="btn btn-outline internal-only" data-action="save">Kundenstand speichern</button></div></div>`;
+  <div class="sidelinks" style="margin-top:22px">${result ? '' : `<button class="btn btn-primary" data-action="offer">${tr('viewOffer')}</button>`}<button class="btn btn-outline internal-only" data-action="save">Kundenstand speichern</button></div></div>`;
 }
-
 function render() {
   const t = totals();
   document.body.classList.toggle('kv', kv);
-  const visible = STEPS.map((l, i) => [l, i]).filter(([, i]) => !(kv && i === 1));
+  const steps = tr('steps');
+  const visible = steps.map((l, i) => [l, i]).filter(([, i]) => !(kv && i === 1));
   const main = view === 'drafts' ? '<p class="subtle">Lade …</p>' : view === 'articles' ? articlesView() : [customerStep, internalStep, productsStep, quoteStep, signStep, onboardStep][step]();
-  root.innerHTML = `<div class="ob">
-  <div class="top"><div class="top-inner"><div class="brandrow"><img src="/img/logo-dark-bg.png" alt="${esc(cat.company.name)}"><div class="tools"><span class="pill dark">${kv ? 'KUNDENANSICHT' : 'INTERNE ANWENDUNG'}</span><button class="btn btn-outline btn-small" data-action="mode">${kv ? 'Kundenansicht beenden' : 'Zur Kundenansicht'}</button><span class="internal-only" style="display:contents"><button class="btn btn-outline btn-small" data-action="save">Kundenstand speichern</button><button class="btn btn-outline btn-small" data-action="drafts">Gespeicherte laden</button><button class="btn btn-outline btn-small" data-action="articles">Artikelzuordnung</button><button class="btn btn-outline btn-small" data-action="new">Neu</button></span></div></div>
-  <div class="hero"><div><div class="eyebrow">${esc(cat.company.name.toUpperCase())} · KUNDEN-ONBOARDING</div><h1>Ihre IT. <span>Unser Plan.</span></h1><p>Vom ersten Gespräch bis zum kalkulierten Managed-Service-Angebot. Klar, nachvollziehbar und auf Ihren Betrieb abgestimmt.</p></div><div class="hero-note"><b>Erst wofür. Dann womit.</b>Beratung · Umsetzung · Betreuung</div></div></div></div>
-  <div class="metricbar"><div class="metric"><span>Kunde</span><b style="font-size:17px" data-live="company">${esc(st.customer.company || 'Neukunde')}</b><small data-live="userslabel">${count(st.assets.users)} Benutzer</small></div><div class="metric"><span>Service-Level</span><b>${cat.sla.labels[st.sla]}</b><small>Separat kalkuliert</small></div><div class="metric"><span>Monatlich netto</span><b data-live="monthly">${amt(t.monthly)}</b><small>Inkl. Managed Services</small></div><div class="metric"><span>Onboarding</span><b>${result ? `${(result.onboarding || []).filter(Boolean).length}/${cat.onboardingChecks.length}` : '–'}</b><small>${result ? 'Abgeschlossene Schritte' : 'Nach Unterschrift'}</small></div></div>
-  <div class="workspace"><div class="workspace-main">${view === 'board' ? `<nav class="stepbar" aria-label="Angebotsprozess">${visible.map(([label, i]) => `<button class="step ${step === i ? 'active' : ''} ${step > i ? 'done' : ''}" data-step="${i}" ${result && i < 4 ? 'disabled' : ''}><span class="circle">${i + 1}</span>${label}</button>`).join('')}</nav>` : ''}
-  <main id="ob-main">${main}${view === 'board' && step < 4 ? `<div class="foot-actions"><button class="btn btn-outline" data-action="prev" ${step === 0 ? 'disabled' : ''}>← Zurück</button><span class="subtle">Schritt ${step + 1} von ${STEPS.length}</span><button class="btn btn-primary" data-action="next">Weiter →</button></div>` : ''}</main></div>
+  const langBtn = `<span class="langswitch" role="group" aria-label="Sprache / Language">${['de', 'en'].map((l) => `<button type="button" class="btn btn-outline btn-small" data-action="lang" data-lang="${l}" aria-pressed="${lang() === l}">${l.toUpperCase()}</button>`).join('')}</span>`;
+  root.innerHTML = `<div class="ob" lang="${lang()}">
+  <div class="top"><div class="top-inner"><div class="brandrow"><img src="/img/logo-dark-bg.png" alt="${esc(cat.company.name)}"><div class="tools"><span class="pill dark">${kv ? tr('customerView') : tr('internalApp')}</span>${langBtn}<button class="btn btn-outline btn-small" data-action="mode">${kv ? tr('endCustomer') : tr('toCustomer')}</button><span class="internal-only" style="display:contents"><button class="btn btn-outline btn-small" data-action="save">Kundenstand speichern</button><button class="btn btn-outline btn-small" data-action="drafts">Gespeicherte laden</button><button class="btn btn-outline btn-small" data-action="articles">Artikelzuordnung</button><button class="btn btn-outline btn-small" data-action="new">Neu</button></span></div></div>
+  <div class="hero"><div><div class="eyebrow">${esc(cat.company.name.toUpperCase())} · ${tr('heroEyebrow')}</div><h1>${tr('heroTitle')}</h1><p>${tr('heroText')}</p></div><div class="hero-note"><b>${tr('heroNoteB')}</b>${tr('heroNote')}</div></div></div></div>
+  <div class="metricbar"><div class="metric"><span>${tr('mCustomer')}</span><b style="font-size:17px" data-live="company">${esc(st.customer.company || tr('newCustomer'))}</b><small data-live="userslabel">${tr('users', count(st.assets.users))}</small></div><div class="metric"><span>${tr('mSla')}</span><b>${esc(cat.sla.labels[st.sla])}</b><small>${tr('mSlaSub')}</small></div><div class="metric"><span>${tr('mMonthly')}</span><b data-live="monthly">${amt(t.monthly)}</b><small>${tr('mMonthlySub')}</small></div><div class="metric"><span>${tr('mOnboard')}</span><b>${result ? `${(result.onboarding || []).filter(Boolean).length}/${cat.onboardingChecks.length}` : '–'}</b><small>${result ? tr('mOnboardDone') : tr('mOnboardAfter')}</small></div></div>
+  <div class="workspace"><div class="workspace-main">${view === 'board' ? `<nav class="stepbar" aria-label="${tr('mOnboard')}">${visible.map(([label, i]) => `<button class="step ${step === i ? 'active' : ''} ${step > i ? 'done' : ''}" data-step="${i}" ${result && i < 4 ? 'disabled' : ''}><span class="circle">${i + 1}</span>${label}</button>`).join('')}</nav>` : ''}
+  <main id="ob-main">${main}${view === 'board' && step < 4 ? `<div class="foot-actions"><button class="btn btn-outline" data-action="prev" ${step === 0 ? 'disabled' : ''}>${tr('back')}</button><span class="subtle">${tr('stepOf', step + 1, steps.length)}</span><button class="btn btn-primary" data-action="next">${tr('next')}</button></div>` : ''}</main></div>
   <aside class="workspace-side">${sidebar()}</aside></div>
-  <div class="mini"><span><small>Monatlich netto</small><b data-live="monthly">${amt(t.monthly)}</b></span><span><small>Einmalig</small><strong data-live="once">${amt(t.once)}</strong></span></div>
+  <div class="mini"><span><small>${tr('mMonthly')}</small><b data-live="monthly">${amt(t.monthly)}</b></span><span><small>${tr('once')}</small><strong data-live="once">${amt(t.once)}</strong></span></div>
   </div>`;
   bind();
   if (view === 'drafts') loadDrafts();
   if (view === 'articles') loadArticles();
   if (step === 4 && !result && view === 'board') pad = signaturePad(root.querySelector('#sign'), () => { const h = root.querySelector('#sign-hint'); if (h) h.hidden = true; });
-  if (step === 2) refreshWarnings();
-  if (step === 3) refreshWarnings();
+  if (step === 2 || step === 3) refreshWarnings();
 }
-
 function refreshLive() {
   const t = totals();
   const set = (k, v) => root.querySelectorAll(`[data-live="${k}"]`).forEach((el) => { el.textContent = v; });
   set('monthly', amt(t.monthly)); set('arr', amt(t.arr)); set('once', amt(t.once)); set('first', amt(t.first)); set('gross', amt(t.gross));
-  set('users', count(st.assets.users)); set('userslabel', `${count(st.assets.users)} Benutzer`); set('company', st.customer.company || 'Neukunde');
+  set('users', count(st.assets.users)); set('userslabel', tr('users', count(st.assets.users))); set('company', st.customer.company || tr('newCustomer'));
 }
 
 function setValue(path, v, type) {
@@ -290,7 +372,7 @@ function updateCard(id) {
   card.classList.toggle('active', s.selected);
   card.querySelector('[data-price]').textContent = amt(tier ? p.tier : p.price);
   const ex = card.querySelector('[data-tier]');
-  if (ex) ex.textContent = tier ? 'Staffelpreis aktiv' : `ab ${p.threshold} Stück: ${amt(p.tier)}`;
+  if (ex) ex.textContent = tier ? tr('tierActive') : tr('tierFrom', p.threshold, amt(p.tier));
   card.querySelector(`[data-path="products.${id}.selected"]`).checked = s.selected;
   const inp = card.querySelector(`[data-path="products.${id}.qty"]`);
   if (Number(inp.value) !== q) inp.value = q;
@@ -370,6 +452,11 @@ async function onClick(e) {
   const top = () => window.scrollTo(0, 0);
   if (['artsearch', 'artsuggest', 'artset', 'artclear', 'artall'].includes(a)) return articleAction(a, b);
   if (a === 'articles') { view = 'articles'; art = { list: null, sug: {}, searchFor: null, results: [], busy: false }; render(); top(); return; }
+  if (a === 'lang') {
+    st.lang = b.dataset.lang === 'en' ? 'en' : 'de';
+    try { await loadCatalog(st.lang); } catch (err) { ctx.toast(err.message, true); }
+    const y = window.scrollY; render(); window.scrollTo(0, y); return;
+  }
   if (a === 'next') { step = Math.min(STEPS.length - 1, step + 1); if (kv && step === 1) step = 2; render(); top(); }
   if (a === 'prev') { step = Math.max(0, step - 1); if (kv && step === 1) step = 0; render(); top(); }
   if (a === 'offer') { step = 3; view = 'board'; render(); top(); }
@@ -397,7 +484,7 @@ async function onClick(e) {
   }
   if (a === 'drafts') { view = 'drafts'; render(); top(); }
   if (a === 'back') {
-    if (catStale) { try { cat = await ctx.api('/offer/catalog'); catStale = false; } catch { /* alter Stand */ } }
+    if (catStale) { for (const k of Object.keys(catCache)) delete catCache[k]; try { await loadCatalog(lang()); catStale = false; } catch { /* alter Stand */ } }
     view = 'board'; render();
   }
   if (a === 'loaddraft') {
@@ -405,6 +492,7 @@ async function onClick(e) {
       const d = await ctx.api(`/offer/drafts/${encodeURIComponent(b.dataset.id)}`);
       const base = fresh();
       st = { ...base, ...d.state, draftId: d.id, products: base.products.map((p) => ({ ...p, ...(d.state.products || []).find((x) => x.id === p.id) })) };
+      await loadCatalog(lang());
       result = null; step = 0; view = 'board'; render(); top();
     } catch (err) { ctx.toast(err.message, true); }
   }
@@ -440,13 +528,13 @@ async function doSign(btn) {
   st.signer = { name: v('signer.name'), role: v('signer.role'), email: v('signer.email') };
   st.accepted = root.querySelector('[data-path="accepted"]').checked;
   const problems = [];
-  if (st.signer.name.trim().length < 3) problems.push('Name der unterschreibenden Person fehlt');
-  if (!pad?.hasInk()) problems.push('Unterschrift fehlt');
-  if (!st.accepted) problems.push('Bitte die Beauftragung bestätigen');
-  if (serverWarnings.length && !st.ready) problems.push('Offene Prüfpunkte: im Schritt „Angebot“ intern freigeben');
+  if (st.signer.name.trim().length < 3) problems.push(tr('errName'));
+  if (!pad?.hasInk()) problems.push(tr('errSig'));
+  if (!st.accepted) problems.push(tr('errAccept'));
+  if (serverWarnings.length && !st.ready) problems.push(tr('errReady'));
   if (problems.length) { err.textContent = problems.join(' · '); err.hidden = false; return; }
   btn.disabled = true;
-  btn.textContent = 'Wird übertragen …';
+  btn.textContent = tr('sending');
   try {
     result = await ctx.api('/offer/sign', { method: 'POST', body: { ...payload(), signerName: st.signer.name, signerRole: st.signer.role, signerEmail: st.signer.email, acceptedTerms: true, signature: pad.toDataURL() } });
     if (st.draftId) ctx.api(`/offer/drafts/${encodeURIComponent(st.draftId)}`, { method: 'DELETE' }).catch(() => {});
@@ -454,7 +542,7 @@ async function doSign(btn) {
     window.scrollTo(0, 0);
   } catch (e) {
     err.textContent = e.message; err.hidden = false;
-    btn.disabled = false; btn.textContent = 'Verbindlich beauftragen';
+    btn.disabled = false; btn.textContent = tr('signBtn');
   }
 }
 
