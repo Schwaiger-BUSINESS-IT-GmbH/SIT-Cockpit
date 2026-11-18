@@ -160,11 +160,30 @@ r.post('/document/upload', express.raw({ type: '*/*', limit: '20mb' }), (req, re
   console.log('[mock] Dokument hochgeladen:', JSON.stringify(docu));
   res.status(201).json(docu);
 });
+// Schema-Auszug wie im echten Mandanten (für SIT-Time und das Prüfskript npm run check)
+const P = (...f) => ({ properties: Object.fromEntries(f.map((x) => [x, {}])) });
 r.get('/meta/openapi.json', (req, res) => res.json({ paths: {
   '/document/upload': { post: { parameters: [{ name: 'entityName' }, { name: 'entityId' }, { name: 'name' }, { name: 'description' }] } },
+  '/quotation/id/{id}/accept': { post: {} }, '/quotation/id/{id}/updateStatus': { post: {} },
+  '/ticket/count': { get: {} }, '/attendance/logOn': { post: {} },
 }, components: { schemas: {
   timeRecord: { properties: Object.fromEntries(TR_FIELDS.map((f) => [f, {}])) },
-  task: { properties: { id: {}, subject: {}, articleId: {}, entityReferences: {} } },
+  task: P('id', 'subject', 'articleId', 'entityReferences'),
+  quotation: P('id', 'customerId', 'quotationNumber', 'quotationDate', 'validTo', 'status', 'netAmount', 'grossAmount', 'commission', 'recordComment', 'quotationItems'),
+  quotationItem: P('articleId', 'quantity', 'unitPrice', 'manualUnitPrice', 'positionNumber', 'title', 'description', 'discountPercentage'),
+  salesOrder: P('orderNumber', 'orderDate', 'customerId', 'netAmount', 'status', 'quotationId', 'invoiced'),
+  salesInvoice: P('invoiceNumber', 'customerId', 'invoiceDate', 'dueDate', 'grossAmount', 'netAmount', 'paid', 'paymentStatus', 'status'),
+  party: P('company', 'customer', 'customerNumber', 'partyType', 'email', 'phone', 'addresses', 'firstName', 'lastName'),
+  contract: P('partyId', 'contractStatus', 'contractItems', 'contractNumber'),
+  contractItem: P('interval', 'intervalType', 'netAmount', 'unitPrice', 'quantity', 'articleId'),
+  ticket: P('ticketNumber', 'subject', 'partyId', 'ticketStatusId', 'assignedUserId', 'lastModifiedDate'),
+  article: P('articleNumber', 'name', 'articlePrices', 'active'),
+  offerStatusType: { enum: ['OPEN', 'ENTRY_COMPLETED', 'INQUIRED', 'ACCEPTED', 'REJECTED', 'CANCELLED'] },
+  orderStatusType: { enum: ['ORDER_ENTRY_IN_PROGRESS', 'ORDER_CONFIRMATION_PRINTED', 'CLOSED', 'MANUALLY_CLOSED', 'CANCELLED'] },
+  salesInvoiceStatusType: { enum: ['NEW', 'ENTRY_COMPLETED', 'DOCUMENT_CREATED', 'OPEN_ITEM_CREATED', 'CANCELLED'] },
+  paymentStatus: { enum: ['OPEN', 'PAID', 'NO_OPEN_ITEM', 'CLEARED_WITH_CREDIT_NOTE', 'CREDIT_NOTE_CLEARED', 'UNKNOWN'] },
+  quotationType: { enum: ['SALES_ORDER', 'BLANKET_SALES_ORDER', 'CONTRACT', 'NONE', 'PROJECT', 'SALES_INVOICE'] },
+  billingInterval: { enum: ['DAILY', 'WEEKLY', 'MONTHLY', 'QUARTER', 'HALF_YEARLY', 'YEARLY'] },
 } } }));
 r.get('/user', (req, res) => res.json({ result: applyFilters(Object.values(users), req.query) }));
 r.post('/timeRecord', (req, res) => {

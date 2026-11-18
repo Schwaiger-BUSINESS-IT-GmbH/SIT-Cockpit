@@ -34,6 +34,14 @@ npm start
 2. **weclapp:** Für jede Artikelnummer (`sku`) aus `config/angebotsboard.json` einen Artikel mit gleicher Artikelnummer anlegen – die zehn Produkte, die SLA-Artikel (`SIT-SLA-…`, `SIT-GOV-…`) und `SIT-PROJEKT`. Fehlende Artikel zeigt das Board intern rot an.
 3. **Anmeldung:** jeder Mitarbeiter mit seinem persönlichen weclapp-API-Token (*Mein Profil → API*). Es gelten seine weclapp-Rechte, z. B. sieht nur, wer Rechnungen sehen darf, die Rechnungs-Kacheln.
 
+**Prüfung vor dem Echtbetrieb** (nur lesend, schreibt nichts in weclapp oder Atera):
+
+```powershell
+$env:WECLAPP_TOKEN="<dein-token>"; npm run check
+```
+
+Prüft Anmeldung, API-Schema des Mandanten (alle Felder, Endpunkte und Statuswerte, die das Cockpit nutzt), deine Leserechte je Cockpit-Bereich, welcher Ticketstatus als „geschlossen“ gilt, ob alle Artikel des Angebotsboards in weclapp existieren, Atera-Zugriff, Gerätetypen, `LastSeen`, offene Alerts sowie die Zuordnung Atera-Kunde → weclapp-Kunde. Ergebnis mit ✔ / ⚠ / ✖; bei Fehlern Exit-Code 1.
+
 ## Angebotsboard im Detail
 
 Ablauf in sechs Schritten: **Kundendaten** (weclapp-Kunde suchen oder Neukunde, IT-Umgebung) → **Interne Einstufung** (Gold/Silber/Bronze/Registered, nur intern) → **Serviceauswahl** (Zusatz-SLA, IT-Review, Katalog, Projektposition) → **Angebot** (Vorschau, PDF) → **Unterschrift** → **Onboarding** (Checkliste je Auftrag).
