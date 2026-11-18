@@ -31,7 +31,8 @@ export const config = {
   ateraCustomerNumberField: process.env.ATERA_CUSTOMER_NUMBER_FIELD || 'weclapp-Kundennummer',
   // Regeln (siehe docs/anforderungen.md)
   serverOfflineMinutes: num(process.env.SERVER_OFFLINE_MINUTES, 15),
-  workstationOfflineDays: num(process.env.WORKSTATION_OFFLINE_DAYS, 7),
+  // Server länger als X Tage offline = veraltet (vermutlich abgebaut), zählt nicht zur Ampel
+  staleServerDays: num(process.env.STALE_SERVER_DAYS, 30),
   // ---------- Angebotsboard ----------
   // Nach der Unterschrift automatisch einen Auftrag erzeugen
   offerCreateSalesOrder: process.env.OFFER_CREATE_SALES_ORDER !== '0',

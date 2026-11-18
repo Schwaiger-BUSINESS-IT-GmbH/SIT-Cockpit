@@ -59,6 +59,7 @@ const agents = [
   ...['LANG-PC01', 'LANG-PC02', 'LANG-PC03', 'LANG-PC04', 'LANG-PC05', 'LANG-NB-SEKR'].map((n, i) => agent(2, n, 'ws', { user: `user${i + 1}` })),
   // 3 Autohaus Maier – Server offline (kritisch)
   agent(3, 'MAIER-SRV01', 'server', { online: false, seen: 47 * MIN, desc: 'Werkstattsystem' }),
+  agent(3, 'MAIER-SRV-ALT', 'server', { online: false, seen: 140 * D, desc: 'alter Server, abgebaut' }),
   agent(3, 'MAIER-WERKSTATT1', 'ws'),
   agent(3, 'MAIER-VERKAUF1', 'ws'),
   agent(3, 'MAIER-VERKAUF2', 'ws', { online: false, seen: 12 * D }),
@@ -107,6 +108,31 @@ const alerts = [
   alert('PICHLER-SRV', 'Warning', 'CPU-Auslastung über 90 % seit 30 Min.', 40 * MIN, 'Performance'),
   alert('LANG-PC03', 'Information', 'Neue Software installiert', 3 * H, 'General'),
   { ...alert('WAGNER-SRV01', 'Critical', 'Dienst gestoppt (bereits erledigt)', 5 * D), Archived: true },
+  { AlertID: 5999, Severity: 'Critical', Title: 'Gerät antwortet nicht auf Ping', Created: iso(35 * MIN), DeviceGuid: 'net-7012', DeviceName: 'Firewall Hofer (Ping)', CustomerID: 10, CustomerName: 'Elektro Hofer e.U.', AlertCategoryID: 'Availability', Archived: false, Source: 'Atera' },
+];
+
+// Netzwerkgeräte wie im echten Atera: Firewalls per SNMP (mit Online-Status)
+// oder per Ping/TCP (nur Alerts); Drucker/Switches werden vom Cockpit ignoriert.
+let netId = 7000;
+const snmp = (CustomerID, Name, Type, Online = true) => {
+  const c = customers.find((x) => x.CustomerID === CustomerID);
+  return { DeviceID: ++netId, DeviceGuid: `net-${netId}`, CustomerID, CustomerName: c.CustomerName, Name, Hostname: `10.0.${CustomerID}.254`, Online, Type, Monitored: true, Model: '' };
+};
+const snmpDevices = [
+  snmp(1, 'FW-HUBER-FG60F', 'Firewall'),
+  snmp(2, 'FW-LANG-FG80F', 'Firewall'),
+  snmp(2, 'Drucker Empfang', 'Printer', false),
+  snmp(3, 'FW-MAIER-FG40F', 'Firewall'),
+  snmp(4, 'FW-GRUBER-FG40F', 'Firewall'),
+  snmp(5, 'FW-WIMMER-FG40F', 'Firewall', false),
+  snmp(6, 'FW-SEEBLICK-FG100F', 'Firewall'),
+  snmp(6, 'Core-Switch Keller', 'Switch'),
+  snmp(7, 'FW-WAGNER-FG60F', 'Firewall'),
+  snmp(9, 'Drucker Kanzlei', 'Printer'),
+];
+const genericDevices = [
+  { DeviceID: ++netId, DeviceGuid: `net-${netId}`, CustomerID: 8, CustomerName: 'Gemeindeamt Neukirchen', Name: 'Firewall Gemeinde (Ping)', Monitored: true },
+  { DeviceID: ++netId, DeviceGuid: `net-${netId}`, CustomerID: 10, CustomerName: 'Elektro Hofer e.U.', Name: 'Firewall Hofer (Ping)', Monitored: true },
 ];
 
 const page = (rows, q) => {
@@ -121,6 +147,10 @@ export function ateraMock() {
   r.get('/customers', (req, res) => res.json(page(customers, req.query)));
   r.get('/agents', (req, res) => res.json(page(agents, req.query)));
   r.get('/alerts', (req, res) => res.json(page(alerts, req.query)));
+  r.get('/devices/snmpdevices', (req, res) => res.json(page(snmpDevices, req.query)));
+  r.get('/devices/genericdevices', (req, res) => res.json(page(genericDevices, req.query)));
+  r.get('/devices/tcpdevices', (req, res) => res.json(page([], req.query)));
+  r.get('/devices/httpdevices', (req, res) => res.json(page([], req.query)));
   r.get('/customvalues/customerfield/:id/:field', (req, res) => {
     const nr = { 1: 'K-10001', 2: 'K-10002', 3: 'K-10003', 4: 'K-10004', 5: 'K-10005', 6: 'K-10006' }[req.params.id];
     res.json(nr ? [{ ValueAsString: nr }] : []);

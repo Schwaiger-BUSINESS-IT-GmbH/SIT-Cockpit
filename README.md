@@ -4,7 +4,7 @@ Steuerzentrale von Schwaiger Business IT – vier Bereiche in einer App, ein Log
 
 | Bereich | Was es tut | Quelle |
 |---|---|---|
-| **Kunden & Geräte** | Ampel-Übersicht aller Kunden: Server offline, fehlgeschlagene Backups, kritische Alerts, volle Laufwerke, möglicher Strom-/Internetausfall. Probleme zuerst, Details auf Klick. | Atera |
+| **Kunden & Geräte** | Ampel-Übersicht über **Server und Firewalls** aller Kunden: Server offline, Firewall nicht erreichbar, fehlgeschlagene Backups, kritische Alerts, volle Laufwerke, möglicher Strom-/Internetausfall. Probleme zuerst, Details auf Klick. | Atera |
 | **Vertrieb & Finanzen** | Offene Angebote (inkl. „nachfassen“), angenommene Angebote, Managed-Service-Umsatz/Monat, offene Aufträge, überfällige Rechnungen, Auftragseingang 6 Monate, eigene Zeit im Monat. | weclapp |
 | **Angebotsboard** | Kunden-Onboarding am Tablet (Gestaltung nach *SIT_Angebotsboard_V4*): Erstaufnahme mit IT-Umgebung, interne Einstufung, Zusatz-SLA + Managed-Service-Katalog mit Staffelpreisen und Leistungsbeschreibungen, Angebotsvorschau, Unterschrift mit dem Finger → (Neu-)Kunde, Angebot (angenommen), Auftrag und PDF in weclapp, danach Onboarding-Checkliste. Umschaltbare Kundenansicht ohne interne Daten. | weclapp |
 | **Zeiten** | SIT-Time (Ticket-Zeiterfassung, Arbeitszeit) – eingebettet, gleicher Login. | weclapp |
@@ -57,16 +57,21 @@ Ablauf in sechs Schritten: **Kundendaten** (weclapp-Kunde suchen oder Neukunde, 
   4. Angebot annehmen → Auftrag, PDF auch dort (`OFFER_CREATE_SALES_ORDER=0` = nur „angenommen“).
 - Scheitert weclapp (z. B. fehlender Artikel), bleibt der Vorgang gespeichert und kann erneut gesendet werden – im Board oder unter *Vertrieb & Finanzen*.
 
-## Ampel-Regeln (siehe `docs/anforderungen.md`)
+## Ampel-Regeln
+
+Die Übersicht zeigt **nur Server und Firewalls**. Arbeitsplätze, Drucker, Switches usw. und deren Alerts werden ausgeblendet, Kunden ohne Server/Firewall erscheinen nicht.
 
 | Situation | Bewertung |
 |---|---|
 | Server/Domain Controller ≥ 15 Min. offline | kritisch |
-| Arbeitsplatz ≥ 7 Tage offline | Warnung |
-| Atera-Alert *Critical* / *Warning* | kritisch / Warnung |
-| Laufwerk < 10 % / < 5 % frei | Warnung / kritisch |
-| ≥ 50 % der Geräte (mind. 3) gleichzeitig vor Kurzem offline gegangen | kritisch, Hinweis „Möglicher Strom- oder Internetausfall“ |
+| Server länger als 30 Tage offline (`STALE_SERVER_DAYS`) | *veraltet* – kein Alarm, grau als Aufräum-Hinweis |
+| Firewall nicht erreichbar (SNMP) | kritisch |
+| Atera-Alert *Critical* / *Warning* an Server oder Firewall | kritisch / Warnung |
+| Laufwerk < 10 % / < 5 % frei (Server) | Warnung / kritisch |
+| Firewall nicht erreichbar und Server gleichzeitig vor Kurzem offline | kritisch, Hinweis „Möglicher Strom- oder Internetausfall“ |
 | Alert mit Backup/Veeam/Acronis… im Titel | als Backup-Problem gezählt |
+
+**Firewalls** kommen aus den Atera-Netzwerkgeräten: SNMP-Geräte vom Typ „Firewall“ (mit Online-Status) sowie Ping-/TCP-/HTTP-Geräte mit typischem Namen (Firewall, FortiGate, Sophos …) – Letztere nur über ihre Alerts.
 
 Atera-Daten werden zentral alle 3 Minuten geholt und zwischengespeichert (`ATERA_REFRESH_SECONDS`).
 

@@ -144,8 +144,11 @@ function drawCustomers(keepFocus = false) {
   const crit = all.filter((c) => c.status === 'critical');
   const warn = all.filter((c) => c.status === 'warning');
   const ok = all.filter((c) => c.status === 'ok');
-  const devices = all.reduce((s, c) => s + c.deviceCount, 0);
-  const online = all.reduce((s, c) => s + c.online, 0);
+  const srvTotal = all.reduce((s, c) => s + c.servers, 0);
+  const srvUp = all.reduce((s, c) => s + c.servers - c.serversDown, 0);
+  const staleTotal = all.reduce((s, c) => s + (c.staleServers || 0), 0);
+  const fwTotal = all.reduce((s, c) => s + c.firewalls, 0);
+  const fwDown = all.reduce((s, c) => s + c.firewallsDown, 0);
   const backups = all.reduce((s, c) => s + c.backupIssues, 0);
   const q = state.query.trim().toLowerCase();
   const match = (c) => !q || c.name.toLowerCase().includes(q) || (c.city || '').toLowerCase().includes(q);
@@ -169,7 +172,8 @@ function drawCustomers(keepFocus = false) {
       ${kpiBtn('critical', 'Kritisch', crit.length, 'Kunden mit akutem Problem', 'crit')}
       ${kpiBtn('warning', 'Warnung', warn.length, 'Kunden mit Hinweis', 'warn')}
       ${kpiBtn('all', 'Alles in Ordnung', ok.length, `von ${plural(all.length, 'Kunde', 'Kunden')}`)}
-      <div class="kpi"><div class="label">Geräte online</div><div class="value">${nf(online)} <span class="muted" style="font-size:16px">/ ${nf(devices)}</span></div><div class="sub">${devices ? Math.round((online / devices) * 100) : 0} % erreichbar</div></div>
+      <div class="kpi"><div class="label">Server online</div><div class="value">${nf(srvUp)} <span class="muted" style="font-size:16px">/ ${nf(srvTotal)}</span></div><div class="sub">${srvTotal ? Math.round((srvUp / srvTotal) * 100) : 0} % erreichbar${staleTotal ? ` · ${staleTotal} veraltet ausgeblendet` : ''}</div></div>
+      <div class="kpi ${fwDown ? 'crit' : ''}"><div class="label">Firewalls nicht erreichbar</div><div class="value">${nf(fwDown)} <span class="muted" style="font-size:16px">/ ${nf(fwTotal)}</span></div><div class="sub">überwachte Firewalls</div></div>
       ${kpiBtn('backup', 'Backup-Probleme', backups, 'fehlgeschlagene Sicherungen', backups ? 'crit' : '')}
     </section>
     <div class="toolbar">
@@ -198,8 +202,9 @@ function kpiBtn(filter, label, value, sub, cls = '') {
 
 function tile(c) {
   const meta = [
-    `<span><b>${c.online}</b>/${c.deviceCount} online</span>`,
-    c.servers ? `<span><b>${c.servers - c.serversDown}</b>/${c.servers} Server</span>` : '',
+    c.servers ? `<span><b>${c.servers - c.serversDown}</b>/${c.servers} Server online</span>` : '',
+    c.firewalls ? `<span>Firewall <b>${c.firewallsDown ? 'nicht erreichbar' : 'ok'}</b></span>` : '',
+    c.staleServers ? `<span>${c.staleServers} veraltet</span>` : '',
     c.counts.critical ? `<span><b>${c.counts.critical}</b> kritisch</span>` : '',
     c.counts.warning ? `<span><b>${c.counts.warning}</b> Warnung</span>` : '',
   ].join('');
@@ -223,8 +228,9 @@ async function renderCustomer(id) {
   if (stale(seq)) return;
   const c = d.customer;
   const w = d.weclapp || {};
-  const bad = c.devices.filter((x) => x.status !== 'ok');
-  const good = c.devices.filter((x) => x.status === 'ok');
+  const bad = c.devices.filter((x) => x.status !== 'ok' && !x.stale);
+  const good = c.devices.filter((x) => x.status === 'ok' && !x.stale);
+  const staleDevs = c.devices.filter((x) => x.stale);
   const val = (sec, f) => (sec && !sec.error ? f(sec) : '–');
   content.innerHTML = `
     <p style="margin:0 0 10px"><a href="#/kunden">← Kundenübersicht</a></p>
@@ -242,17 +248,18 @@ async function renderCustomer(id) {
     ${c.problems.map((p) => `<div class="banner ${p.status === 'critical' ? 'crit' : 'warn'}"><div><b>${p.kind === 'outage' ? 'Möglicher Strom- oder Internetausfall' : esc(p.text)}</b>${p.kind === 'outage' ? esc(p.text.replace(/^[^:]+:\s*/, '')) + '. Kunden anrufen und Stromversorgung bzw. Internetanschluss prüfen lassen.' : ''}</div></div>`).join('')}
     ${!d.party ? `<div class="banner info"><div><b>Kein weclapp-Kunde zugeordnet</b>Trag in Atera beim Kunden das Feld „weclapp-Kundennummer“ ein, dann erscheinen Tickets, Verträge und Angebote hier.</div></div>` : ''}
     <section class="kpis">
-      <div class="kpi"><div class="label">Geräte online</div><div class="value">${c.online}<span class="muted" style="font-size:16px"> / ${c.deviceCount}</span></div></div>
+      <div class="kpi"><div class="label">Server online</div><div class="value">${c.servers - c.serversDown}<span class="muted" style="font-size:16px"> / ${c.servers}</span></div><div class="sub">${c.firewalls ? `Firewall: ${c.firewallsDown ? 'nicht erreichbar' : 'erreichbar'}` : 'keine Firewall überwacht'}</div></div>
       <div class="kpi ${c.counts.critical ? 'crit' : c.counts.warning ? 'warn' : ''}"><div class="label">Handlungsbedarf</div><div class="value">${c.counts.critical + c.counts.warning}</div><div class="sub">${c.counts.critical} kritisch · ${c.counts.warning} Warnung</div></div>
       <div class="kpi"><div class="label">Offene Tickets · weclapp</div><div class="value">${val(w.tickets, (t) => t.count)}</div></div>
       <div class="kpi"><div class="label">Managed Services / Monat</div><div class="value">${val(w.contracts, (t) => eur0(t.monthly))}</div><div class="sub">${val(w.contracts, (t) => plural(t.count, 'aktiver Vertrag', 'aktive Verträge'))}</div></div>
       <div class="kpi"><div class="label">Offene Angebote</div><div class="value">${val(w.quotations, (t) => t.count)}</div><div class="sub">${val(w.quotations, (t) => eur0(t.net) + ' netto')}</div></div>
     </section>
     <div class="card">
-      <div class="card-head"><h2>Geräte</h2><span class="muted small">${plural(c.deviceCount, 'Gerät', 'Geräte')} · Probleme zuerst</span></div>
-      ${!c.deviceCount ? '<p class="empty">Keine Geräte in Atera.</p>' : ''}
-      ${bad.length ? `<div class="devices">${bad.map((x, i) => device(x, i === 0)).join('')}</div>` : c.deviceCount ? '<div class="banner ok" style="margin:0"><div><b>Alle Geräte in Ordnung</b></div></div>' : ''}
-      ${good.length ? `<details style="margin-top:10px"><summary class="btn ghost small" style="display:inline-flex">Unauffällige Geräte anzeigen (${good.length})</summary><div class="devices" style="margin-top:8px">${good.map((x) => device(x, false)).join('')}</div></details>` : ''}
+      <div class="card-head"><h2>Server &amp; Firewalls</h2><span class="muted small">${plural(c.servers, 'Server', 'Server')} · ${plural(c.firewalls, 'Firewall', 'Firewalls')} · Probleme zuerst</span></div>
+      ${!c.deviceCount ? '<p class="empty">Keine Server oder Firewalls in Atera.</p>' : ''}
+      ${bad.length ? `<div class="devices">${bad.map((x, i) => device(x, i === 0)).join('')}</div>` : c.deviceCount ? '<div class="banner ok" style="margin:0"><div><b>Server und Firewalls in Ordnung</b></div></div>' : ''}
+      ${good.length ? `<details style="margin-top:10px"><summary class="btn ghost small" style="display:inline-flex">Unauffällige anzeigen (${good.length})</summary><div class="devices" style="margin-top:8px">${good.map((x) => device(x, false)).join('')}</div></details>` : ''}
+      ${staleDevs.length ? `<details style="margin-top:10px"><summary class="btn ghost small" style="display:inline-flex">Veraltete Server (${staleDevs.length}) – lange offline, in Atera aufräumen</summary><div class="devices" style="margin-top:8px">${staleDevs.map((x) => device(x, false)).join('')}</div></details>` : ''}
     </div>
     ${d.party ? `<div class="grid-2" style="margin-top:18px">
       <div class="card"><div class="card-head"><h2>Offene Tickets</h2></div>${w.tickets?.error ? `<p class="empty">${esc(w.tickets.error)}</p>` : w.tickets?.items?.length ? `<table><tbody>${w.tickets.items.map((t) => `<tr><td class="muted" style="white-space:nowrap">${esc(t.number)}</td><td class="wrap">${esc(t.subject)}</td><td class="num muted small">${date(t.modified)}</td></tr>`).join('')}</tbody></table>` : '<p class="empty">Keine offenen Tickets.</p>'}</div>
@@ -265,19 +272,25 @@ async function renderCustomer(id) {
   });
 }
 
-const KIND = { server: 'Server', workstation: 'Arbeitsplatz', other: 'Gerät' };
+const KIND = { server: 'Server', firewall: 'Firewall', workstation: 'Arbeitsplatz', other: 'Gerät' };
+const seenText = (x) => (x.online === null ? `${esc(x.monitoring || '')}-Überwachung` : x.online ? 'online' : x.kind === 'firewall' ? 'nicht erreichbar' : `offline · ${ago(x.lastSeen)}`);
 function device(x, open) {
   const p = x.problems[0];
   return `<details class="device" ${open ? 'open' : ''}>
     <summary>
-      <span>${chip(x.status)}</span>
+      <span>${x.stale ? chip('neutral', 'Veraltet') : chip(x.status)}</span>
       <span><span class="d-name">${esc(x.name)}</span><br><span class="d-kind">${KIND[x.kind] || 'Gerät'}${x.description ? ` · ${esc(x.description)}` : ''}</span></span>
-      <span class="d-problem">${p ? esc(p.text) + (x.problems.length > 1 ? ` <span class="muted">(+${x.problems.length - 1})</span>` : '') : '<span class="muted">Keine Auffälligkeiten</span>'}</span>
-      <span class="d-seen">${x.online ? 'online' : `offline · ${ago(x.lastSeen)}`}</span>
+      <span class="d-problem">${x.stale ? `<span class="muted">${esc(x.staleText)}</span>` : p ? esc(p.text) + (x.problems.length > 1 ? ` <span class="muted">(+${x.problems.length - 1})</span>` : '') : '<span class="muted">Keine Auffälligkeiten</span>'}</span>
+      <span class="d-seen">${seenText(x)}</span>
     </summary>
     <div class="device-body">
       ${x.problems.length ? `<ul class="problem-list">${x.problems.map((pp) => `<li>${chip(pp.status, { offline: 'Offline', backup: 'Backup', disk: 'Speicher', alert: 'Alert' }[pp.kind] || 'Alert')} <span>${esc(pp.text)}</span>${pp.since ? `<span class="muted small">seit ${dateTime(pp.since)}</span>` : ''}</li>`).join('')}</ul>` : ''}
-      <dl class="facts">
+      ${x.kind === 'firewall' ? `<dl class="facts">
+        <div><dt>Überwachung</dt><dd>${esc(x.monitoring || '–')}</dd></div>
+        <div><dt>Status</dt><dd>${x.online === null ? 'nur über Alerts (kein Online-Status)' : x.online ? 'erreichbar' : 'nicht erreichbar'}</dd></div>
+        <div><dt>Details</dt><dd>${esc(x.description || '–')}</dd></div>
+      </dl>
+      <div><a class="btn small" href="${esc(x.url)}" target="_blank" rel="noopener">In Atera öffnen</a></div>` : `<dl class="facts">
         <div><dt>Betriebssystem</dt><dd>${esc(x.os || '–')}</dd></div>
         <div><dt>Angemeldet</dt><dd>${esc(x.user || '–')}</dd></div>
         <div><dt>IP-Adresse</dt><dd>${esc(x.ip || '–')}</dd></div>
@@ -286,7 +299,7 @@ function device(x, open) {
         <div><dt>Prozessor / RAM</dt><dd>${esc(x.cpu || '–')}${x.memoryMb ? ` · ${Math.round(x.memoryMb / 1024)} GB` : ''}</dd></div>
         ${x.disks.map((dk) => `<div><dt>Laufwerk ${esc(dk.drive || '')}</dt><dd>${dk.freePct} % frei von ${nf(dk.totalGb)} GB<span class="bar ${dk.freePct < 5 ? 'crit' : dk.freePct < 10 ? 'warn' : ''}"><i style="width:${100 - dk.freePct}%"></i></span></dd></div>`).join('')}
       </dl>
-      <div><a class="btn small" href="${esc(x.url)}" target="_blank" rel="noopener">In Atera öffnen / Fernwartung</a></div>
+      <div><a class="btn small" href="${esc(x.url)}" target="_blank" rel="noopener">In Atera öffnen / Fernwartung</a></div>`}
     </div>
   </details>`;
 }

@@ -1,7 +1,10 @@
-// Atera-Anbindung: liest Kunden, Geräte (Agents) und offene Alerts mit dem
-// zentralen API-Schlüssel, bewertet den Zustand nach den Regeln aus
-// docs/anforderungen.md und hält das Ergebnis im Speicher (Hintergrund-Refresh).
-// Der Browser bekommt nur das fertige Ergebnis, nie den Schlüssel.
+// Atera-Anbindung: liest Kunden, Server (Agents), Firewalls (Netzwerkgeräte)
+// und offene Alerts mit dem zentralen API-Schlüssel, bewertet den Zustand und
+// hält das Ergebnis im Speicher (Hintergrund-Refresh). Der Browser bekommt nur
+// das fertige Ergebnis, nie den Schlüssel.
+//
+// Bewusst NUR Server und Firewalls: Arbeitsplätze, Drucker, Switches usw.
+// und deren Alerts werden nicht angezeigt.
 import { config } from './config.js';
 
 export class AteraError extends Error {
@@ -59,6 +62,12 @@ export function deviceKind(agent) {
   return 'other';
 }
 
+// Firewall-Erkennung bei Netzwerkgeräten: SNMP-Typ "Firewall" oder typischer Name
+const FW_NAME = /firewall|fortigate|forti|sophos|sonicwall|pfsense|opnsense|watchguard|\bfw\b/i;
+export function isFirewall(dev) {
+  return dev.Type === 'Firewall' || FW_NAME.test(`${dev.Name || ''} ${dev.Hostname || ''}`);
+}
+
 const isBackupAlert = (a) => /backup|sicherung|veeam|acronis|datto|synology hyper/i.test(
   `${a.AlertCategoryID || ''} ${a.Title || ''} ${a.Source || ''}`);
 
@@ -71,44 +80,59 @@ function fmtSince(ms) {
   return d === 1 ? '1 Tag' : `${d} Tagen`;
 }
 
-/** Bewertet ein Gerät; liefert { status, problems[] } */
+function alertProblems(alerts) {
+  const out = [];
+  for (const a of alerts) {
+    const sev = /crit/i.test(a.Severity) ? 'critical' : /warn/i.test(a.Severity) ? 'warning' : null;
+    if (!sev) continue;
+    out.push({ status: sev, kind: isBackupAlert(a) ? 'backup' : 'alert', text: a.Title || a.AlertMessage || 'Alert', since: ts(a.Created), alertId: a.AlertID });
+  }
+  return out;
+}
+const finish = (problems) => {
+  problems.sort((a, b) => SEV[b.status] - SEV[a.status]);
+  return problems.reduce((s, p) => worst(s, p.status), 'ok');
+};
+
+/** Bewertet einen Server (Agent); liefert { status, problems[], kind, lastSeen } */
 export function rateDevice(agent, alerts, now = Date.now()) {
   const kind = deviceKind(agent);
   const problems = [];
   // LastSeen ist in der Atera-Doku nicht garantiert -> Ersatzfelder
   const lastSeen = ts(agent.LastSeen) ?? ts(agent.LastSeenDate) ?? null;
+  let stale = false;
   if (agent.Online === false) {
     const off = lastSeen ? now - lastSeen : Infinity;
-    if (kind === 'server' && off >= config.serverOfflineMinutes * 60000) {
+    if (lastSeen && off >= config.staleServerDays * 864e5) {
+      // Lange offline: vermutlich abgebaut -> kein Alarm, nur Aufräum-Hinweis
+      stale = true;
+      return { status: 'ok', problems: [], kind, lastSeen, stale, staleText: `Seit ${fmtSince(off)} offline – vermutlich abgebaut, in Atera aufräumen` };
+    }
+    if (off >= config.serverOfflineMinutes * 60000) {
       problems.push({ status: 'critical', kind: 'offline', text: `Server offline seit ${lastSeen ? fmtSince(off) : 'unbekannt'}` });
-    } else if (kind !== 'server' && off >= config.workstationOfflineDays * 864e5) {
-      problems.push({ status: 'warning', kind: 'offline', text: lastSeen ? `Seit ${fmtSince(off)} nicht online` : 'Offline (zuletzt gesehen unbekannt)' });
     }
   }
-  for (const a of alerts) {
-    const sev = /crit/i.test(a.Severity) ? 'critical' : /warn/i.test(a.Severity) ? 'warning' : null;
-    if (!sev) continue;
-    problems.push({
-      status: sev,
-      kind: isBackupAlert(a) ? 'backup' : 'alert',
-      text: a.Title || a.AlertMessage || 'Alert',
-      since: ts(a.Created),
-      alertId: a.AlertID,
-    });
-  }
+  problems.push(...alertProblems(alerts));
   for (const d of agent.HardwareDisks || []) {
     const total = Number(d.Total), free = Number(d.Free);
     if (total > 0 && Number.isFinite(free)) {
       const pct = (free / total) * 100;
-      const already = problems.some((p) => /disk|laufwerk|speicher/i.test(p.text));
+      const already = problems.some((p) => /disk|laufwerk|speicher|festplatte/i.test(p.text));
       if (pct < 10 && !already) {
         problems.push({ status: pct < 5 ? 'critical' : 'warning', kind: 'disk', text: `Laufwerk ${d.Drive || ''} nur noch ${pct.toFixed(0)} % frei`.replace('  ', ' ') });
       }
     }
   }
-  const status = problems.reduce((s, p) => worst(s, p.status), 'ok');
-  problems.sort((a, b) => SEV[b.status] - SEV[a.status]);
-  return { status, problems, kind, lastSeen };
+  return { status: finish(problems), problems, kind, lastSeen, stale };
+}
+
+/** Bewertet eine Firewall (SNMP-, Ping-, TCP- oder HTTP-Gerät) */
+export function rateFirewall(dev, alerts) {
+  const problems = [];
+  // Nur SNMP-Geräte melden einen Online-Status; Ping/TCP/HTTP nur über Alerts
+  if (dev.Online === false) problems.push({ status: 'critical', kind: 'offline', text: 'Firewall nicht erreichbar' });
+  problems.push(...alertProblems(alerts));
+  return { status: finish(problems), problems };
 }
 
 function diskSummary(agent) {
@@ -117,40 +141,37 @@ function diskSummary(agent) {
     .map((d) => ({ drive: d.Drive, totalGb: Math.round(d.Total / 1024), freePct: Math.round((d.Free / d.Total) * 100) }));
 }
 
-/** Kunden mit Geräten, Zustand und Problemen aufbereiten */
-export function buildOverview({ customers, agents, alerts }, now = Date.now()) {
-  const openAlerts = alerts.filter((a) => !a.Archived);
+const sortDevices = (list) => list.sort((a, b) =>
+  (a.stale ? 1 : 0) - (b.stale ? 1 : 0) || SEV[b.status] - SEV[a.status] || (a.kind === 'firewall' ? -1 : 0) - (b.kind === 'firewall' ? -1 : 0) || a.name.localeCompare(b.name, 'de'));
+
+/**
+ * Kunden mit Servern und Firewalls, Zustand und Problemen aufbereiten.
+ * net = { snmp: [], generic: [], tcp: [], http: [] } (Atera-Netzwerkgeräte)
+ */
+export function buildOverview({ customers, agents, alerts, net = {} }, now = Date.now()) {
   const alertsByDevice = new Map();
-  const alertsByCustomer = new Map();
-  for (const a of openAlerts) {
-    if (a.DeviceGuid) {
-      if (!alertsByDevice.has(a.DeviceGuid)) alertsByDevice.set(a.DeviceGuid, []);
-      alertsByDevice.get(a.DeviceGuid).push(a);
-    }
-    if (!alertsByCustomer.has(a.CustomerID)) alertsByCustomer.set(a.CustomerID, []);
-    alertsByCustomer.get(a.CustomerID).push(a);
+  for (const a of alerts) {
+    if (a.Archived || !a.DeviceGuid) continue;
+    if (!alertsByDevice.has(a.DeviceGuid)) alertsByDevice.set(a.DeviceGuid, []);
+    alertsByDevice.get(a.DeviceGuid).push(a);
   }
+  const byCustomer = new Map(customers.map((c) => [c.CustomerID, { id: c.CustomerID, name: c.CustomerName, city: c.City || '', devices: [] }]));
+  const bucket = (id, name) => {
+    let c = byCustomer.get(id);
+    if (!c) { c = { id, name: name || `Kunde ${id}`, city: '', devices: [] }; byCustomer.set(id, c); }
+    return c;
+  };
 
-  const byCustomer = new Map(customers.map((c) => [c.CustomerID, {
-    id: c.CustomerID,
-    name: c.CustomerName,
-    city: c.City || '',
-    devices: [],
-  }]));
-
+  // Server
   for (const ag of agents) {
-    let c = byCustomer.get(ag.CustomerID);
-    if (!c) {
-      c = { id: ag.CustomerID, name: ag.CustomerName || `Kunde ${ag.CustomerID}`, city: '', devices: [] };
-      byCustomer.set(ag.CustomerID, c);
-    }
+    if (deviceKind(ag) !== 'server') continue;
     const r = rateDevice(ag, alertsByDevice.get(ag.DeviceGuid) || [], now);
-    c.devices.push({
+    bucket(ag.CustomerID, ag.CustomerName).devices.push({
       id: ag.AgentID,
       guid: ag.DeviceGuid,
       name: ag.MachineName || ag.AgentName || ag.SystemName,
       description: ag.ComputerDescription || '',
-      kind: r.kind,
+      kind: 'server',
       os: ag.OS || ag.OSType || '',
       online: ag.Online !== false,
       lastSeen: r.lastSeen,
@@ -163,43 +184,57 @@ export function buildOverview({ customers, agents, alerts }, now = Date.now()) {
       url: ag.AppViewUrl || `${config.ateraWebUrl}/new/agent/${ag.AgentID}`,
       status: r.status,
       problems: r.problems,
+      stale: r.stale,
+      staleText: r.staleText || null,
     });
+  }
+
+  // Firewalls
+  const nets = [['snmp', 'SNMP'], ['generic', 'Ping'], ['tcp', 'TCP-Port'], ['http', 'HTTP']];
+  for (const [key, label] of nets) {
+    for (const d of net[key] || []) {
+      if (!isFirewall(d)) continue;
+      const r = rateFirewall(d, alertsByDevice.get(d.DeviceGuid) || []);
+      bucket(d.CustomerID, d.CustomerName).devices.push({
+        id: d.DeviceID,
+        guid: d.DeviceGuid,
+        name: d.Name || d.Hostname || `Firewall ${d.DeviceID}`,
+        description: [d.Model && d.Model !== 'Agent' ? d.Model : '', d.Hostname || d.URL || ''].filter(Boolean).join(' · '),
+        kind: 'firewall',
+        monitoring: label,
+        os: '',
+        online: d.Online === undefined ? null : d.Online !== false, // null = kein Status (nur Alerts)
+        lastSeen: null,
+        disks: [],
+        url: `${config.ateraWebUrl}/new/devices`,
+        status: r.status,
+        problems: r.problems,
+      });
+    }
   }
 
   const list = [];
   for (const c of byCustomer.values()) {
-    const devices = c.devices.sort((a, b) =>
-      SEV[b.status] - SEV[a.status] || (a.kind === 'server' ? -1 : 0) - (b.kind === 'server' ? -1 : 0) || a.name.localeCompare(b.name, 'de'));
-    const online = devices.filter((d) => d.online).length;
-    // Möglicher Ausfall: viele Geräte, die vor Kurzem noch da waren, gleichzeitig offline
-    const recent = devices.filter((d) => d.online || (d.lastSeen && now - d.lastSeen < 864e5 * 7));
-    const recentlyOff = recent.filter((d) => !d.online && d.lastSeen && now - d.lastSeen < 864e5);
-    const outage = recentlyOff.length >= 3 && recentlyOff.length / Math.max(recent.length, 1) >= 0.5;
-
-    // Alerts ohne Gerätebezug (z. B. Kunden-Backup) beim Kunden führen
-    const deviceGuids = new Set(devices.map((d) => d.guid));
-    const loose = (alertsByCustomer.get(c.id) || []).filter((a) => !a.DeviceGuid || !deviceGuids.has(a.DeviceGuid));
-    const customerProblems = rateDevice({ Online: true }, loose, now).problems;
-    if (outage) {
-      // Betroffene Geräte sichtbar machen, auch wenn sie für sich noch unauffällig wären
-      for (const d of recentlyOff) {
-        if (!d.problems.length) {
-          d.problems.push({ status: 'warning', kind: 'offline', text: `Offline seit ${fmtSince(now - d.lastSeen)} (möglicher Ausfall)` });
-          d.status = 'warning';
-        }
-      }
-      devices.sort((a, b) => SEV[b.status] - SEV[a.status] || (a.kind === 'server' ? -1 : 0) - (b.kind === 'server' ? -1 : 0) || a.name.localeCompare(b.name, 'de'));
-      customerProblems.unshift({ status: 'critical', kind: 'outage', text: `Möglicher Strom- oder Internetausfall: ${recentlyOff.length} von ${recent.length} Geräten gleichzeitig offline` });
-    }
+    if (!c.devices.length) continue; // Kunden ohne Server/Firewall nicht anzeigen
+    const devices = sortDevices(c.devices);
+    const allServers = devices.filter((d) => d.kind === 'server');
+    const servers = allServers.filter((d) => !d.stale);
+    const firewalls = devices.filter((d) => d.kind === 'firewall');
+    // Möglicher Ausfall: Firewall nicht erreichbar UND Server vor Kurzem offline gegangen
+    // nicht erreichbar: SNMP meldet offline, oder (Ping/TCP/HTTP ohne Status) kritischer Alert
+    const fwDown = firewalls.filter((d) => d.online === false || (d.online === null && d.status === 'critical'));
+    const srvRecentlyOff = servers.filter((d) => !d.online && d.lastSeen && now - d.lastSeen < 864e5);
+    const outage = fwDown.length > 0 && srvRecentlyOff.length > 0 && srvRecentlyOff.length >= servers.filter((d) => d.online || srvRecentlyOff.includes(d)).length * 0.5;
+    const problems = outage
+      ? [{ status: 'critical', kind: 'outage', text: `Möglicher Strom- oder Internetausfall: Firewall und ${srvRecentlyOff.length === 1 ? '1 Server' : `${srvRecentlyOff.length} Server`} gleichzeitig nicht erreichbar` }]
+      : [];
 
     const counts = { critical: 0, warning: 0, ok: 0 };
-    for (const d of devices) counts[d.status]++;
+    for (const d of devices) if (!d.stale) counts[d.status]++;
     let status = devices.reduce((s, d) => worst(s, d.status), 'ok');
-    status = customerProblems.reduce((s, p) => worst(s, p.status), status);
-    const backupIssues = [...devices.flatMap((d) => d.problems), ...customerProblems].filter((p) => p.kind === 'backup').length;
-    // Wichtigstes Problem für die Kachel
-    const top = customerProblems[0] || devices.find((d) => d.problems.length)?.problems[0] || null;
-    const topDevice = customerProblems[0] ? null : devices.find((d) => d.problems.length)?.name || null;
+    status = problems.reduce((s, p) => worst(s, p.status), status);
+    const top = problems[0] || devices.find((d) => d.problems.length)?.problems[0] || null;
+    const topDevice = problems[0] ? null : devices.find((d) => d.problems.length)?.name || null;
 
     list.push({
       id: c.id,
@@ -208,13 +243,16 @@ export function buildOverview({ customers, agents, alerts }, now = Date.now()) {
       status,
       counts,
       deviceCount: devices.length,
-      online,
-      servers: devices.filter((d) => d.kind === 'server').length,
-      serversDown: devices.filter((d) => d.kind === 'server' && !d.online).length,
-      backupIssues,
+      online: devices.filter((d) => d.online === true).length,
+      servers: servers.length,
+      serversDown: servers.filter((d) => !d.online).length,
+      staleServers: allServers.length - servers.length,
+      firewalls: firewalls.length,
+      firewallsDown: fwDown.length,
+      backupIssues: devices.flatMap((d) => d.problems).filter((p) => p.kind === 'backup').length,
       outage,
       headline: top ? (topDevice ? `${topDevice}: ${top.text}` : top.text) : null,
-      problems: customerProblems,
+      problems,
       devices,
       url: `${config.ateraWebUrl}/new/customer/${c.id}`,
     });
@@ -230,12 +268,17 @@ export function buildOverview({ customers, agents, alerts }, now = Date.now()) {
 let cache = { at: 0, customers: null, error: null, loading: null };
 
 async function load() {
-  const [customers, agents, alerts] = await Promise.all([
+  const soft = (p, extra) => all(p, extra).catch((e) => { console.error(`Atera ${p}:`, e.message); return []; });
+  const [customers, agents, alerts, snmp, generic, tcp, http] = await Promise.all([
     all('/customers'),
     all('/agents'),
-    all('/alerts', { alertStatus: 'Open' }).catch((e) => { console.error('Atera-Alerts:', e.message); return []; }),
+    soft('/alerts', { alertStatus: 'Open' }),
+    soft('/devices/snmpdevices'),
+    soft('/devices/genericdevices'),
+    soft('/devices/tcpdevices'),
+    soft('/devices/httpdevices'),
   ]);
-  return buildOverview({ customers, agents, alerts });
+  return buildOverview({ customers, agents, alerts, net: { snmp, generic, tcp, http } });
 }
 
 export async function refresh() {

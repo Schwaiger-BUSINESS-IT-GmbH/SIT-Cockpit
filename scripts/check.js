@@ -247,6 +247,18 @@ async function checkAtera() {
   } catch (e) { fail(`Geräte nicht lesbar: ${why(e)}`); }
 
   try {
+    const FW = /firewall|fortigate|forti|sophos|sonicwall|pfsense|opnsense|watchguard|fw/i;
+    const counts = {};
+    for (const [ep, label] of [['/devices/snmpdevices', 'SNMP'], ['/devices/genericdevices', 'Ping'], ['/devices/tcpdevices', 'TCP'], ['/devices/httpdevices', 'HTTP']]) {
+      const d = await aget(ep, { page: 1, itemsInPage: 50 });
+      const n = (d.items || []).filter((x) => x.Type === 'Firewall' || FW.test(`${x.Name || ''} ${x.Hostname || ''}`)).length;
+      if (n) counts[label] = n;
+    }
+    const total = Object.values(counts).reduce((a, b) => a + b, 0);
+    (total ? ok : warn)(`Firewalls erkannt (erste Seite je Gerätetyp): ${total}${total ? ` (${Object.entries(counts).map(([k, v]) => `${k} ${v}`).join(', ')})` : ' – keine SNMP-Firewalls bzw. Geräte mit „Firewall“ im Namen'}`);
+  } catch (e) { warn(`Netzwerkgeräte (Firewalls) nicht lesbar: ${why(e)}`); }
+
+  try {
     const d = await aget('/alerts', { page: 1, itemsInPage: 50, alertStatus: 'Open' });
     const items = d.items || [];
     const sev = {}, cat = {};
