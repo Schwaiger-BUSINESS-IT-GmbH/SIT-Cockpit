@@ -1,4 +1,5 @@
 // SIT-Cockpit – Frontend (ohne Build-Schritt, reines JavaScript)
+import { renderBoard, prefillCustomer, leaveBoard } from './board.js';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -95,6 +96,8 @@ function route() {
     if (a.dataset.nav === page) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
   });
   content.classList.toggle('flush', page === 'zeiten');
+  content.classList.remove('board-host');
+  if (page !== 'angebot') leaveBoard();
   const pages = { kunden: id ? () => renderCustomer(id) : renderCustomers, dashboard: renderDashboard, angebot: renderOffer, zeiten: renderTime };
   (pages[page] || renderCustomers)();
   window.scrollTo(0, 0);
@@ -257,9 +260,7 @@ async function renderCustomer(id) {
     </div>` : ''}
   `;
   $('#to-offer')?.addEventListener('click', () => {
-    offer.reset();
-    offer.customer = { id: d.party.id, name: d.party.name, number: d.party.number };
-    offer.step = 2;
+    prefillCustomer(d.party);
     location.hash = '#/angebot';
   });
 }
@@ -333,9 +334,9 @@ async function renderDashboard() {
       <div class="card">
         <div class="card-head"><h2>Am Tablet unterschrieben</h2><a href="#/angebot" class="small">Angebotsboard öffnen</a></div>
         ${hist.offers.length ? `<div class="table-wrap"><table><thead><tr><th>Kunde</th><th>Datum</th><th class="num">Monatlich</th><th>weclapp</th><th></th></tr></thead><tbody>${hist.offers.slice(0, 8).map((o) => `<tr>
-          <td class="wrap">${esc(o.customer.name)}<div class="muted small">${esc(o.signer.name)}</div></td>
+          <td class="wrap">${esc(o.customer.company || o.customer.name)}<div class="muted small">${esc(o.signer.name)}</div></td>
           <td>${date(o.signedAt)}</td>
-          <td class="num">${eur(o.totals.monthlyNet)}</td>
+          <td class="num">${eur(o.totals.monthly ?? o.totals.monthlyNet)}</td>
           <td>${o.weclapp?.quotationNumber ? `<span class="small">Ang. ${esc(o.weclapp.quotationNumber)}${o.weclapp.salesOrderNumber ? `<br>Auftr. ${esc(o.weclapp.salesOrderNumber)}` : ''}</span>` : `<button class="btn small" data-retry="${esc(o.id)}" type="button">Erneut senden</button>`}</td>
           <td><a class="small" href="/api/offer/${encodeURIComponent(o.id)}/pdf" target="_blank" rel="noopener">PDF</a></td>
         </tr>`).join('')}</tbody></table></div>` : '<p class="empty">Noch keine Aufträge über das Angebotsboard.</p>'}
@@ -359,330 +360,11 @@ async function renderDashboard() {
 }
 
 // =====================================================================
-// Angebotsboard ("vom Bierdeckel verkaufen")
+// Angebotsboard (eigenes Modul, Gestaltung nach SIT_Angebotsboard_V4)
 // =====================================================================
-const offer = {
-  step: 1, customer: null, contact: null, qty: {}, term: null, discount: 0, catalog: null, result: null,
-  signer: { name: '', role: '', email: '' }, note: '', accepted: false,
-  reset() { Object.assign(this, { step: 1, customer: null, contact: null, qty: {}, term: null, discount: 0, result: null, signer: { name: '', role: '', email: '' }, note: '', accepted: false }); },
-};
-
-function calc() {
-  const cat = offer.catalog;
-  const term = offer.term || cat.defaultTerm;
-  const disc = Math.min((Number(cat.termDiscounts[term]) || 0) + (Number(offer.discount) || 0), cat.maxDiscount);
-  const lines = [];
-  for (const g of cat.groups) for (const it of g.items) {
-    const q = Number(offer.qty[it.id]) || 0;
-    if (q > 0) {
-      const d = it.billing === 'monthly' ? disc : 0;
-      lines.push({ ...it, quantity: q, discount: d, net: Math.round(it.price * q * (1 - d / 100) * 100) / 100 });
-    }
-  }
-  const monthly = lines.filter((l) => l.billing === 'monthly').reduce((s, l) => s + l.net, 0);
-  const once = lines.filter((l) => l.billing === 'once').reduce((s, l) => s + l.net, 0);
-  const vat = cat.vatPercent / 100;
-  return { lines, term, disc, monthly, once, monthlyGross: monthly * (1 + vat), onceGross: once * (1 + vat), total: monthly * term + once };
-}
-
-async function renderOffer() {
-  const seq = navSeq;
-  if (!offer.catalog) {
-    content.innerHTML = '<p class="loading">Lade Managed-Service-Leistungen aus weclapp …</p>';
-    try { offer.catalog = await api('/offer/catalog'); } catch (e) {
-      if (stale(seq)) return;
-      content.innerHTML = `<div class="banner crit"><div><b>Leistungen konnten nicht geladen werden</b>${esc(e.message)}</div></div>`;
-      return;
-    }
-  }
-  if (stale(seq)) return;
-  if (!offer.term) offer.term = offer.catalog.defaultTerm;
-  drawOffer();
-}
-
-function drawOffer() {
-  const cat = offer.catalog;
-  const steps = [[1, 'Kunde'], [2, 'Leistungen'], [3, 'Unterschrift']];
-  const canGo = (n) => n === 1 || (n === 2 && offer.customer) || (n === 3 && offer.customer && calc().lines.length);
-  const stepNav = offer.step === 4 ? '' : `<nav class="steps" aria-label="Schritte">${steps.map(([n, t]) => `<button type="button" data-step="${n}" ${offer.step === n ? 'aria-current="step"' : ''} class="${offer.step > n ? 'done' : ''}" ${canGo(n) ? '' : 'disabled'}>${n}. ${t}</button>`).join('')}</nav>`;
-  const warn = !cat.categoryFound
-    ? `<div class="banner warn"><div><b>Artikelkategorie „${esc(cat.category)}“ nicht in weclapp gefunden</b>Leg in weclapp die Kategorie an und ordne die Managed-Service-Artikel zu (oder setze OFFER_ARTICLE_NUMBERS).</div></div>`
-    : cat.missingPrices ? `<div class="banner warn"><div><b>${plural(cat.missingPrices, 'Artikel hat', 'Artikel haben')} keinen Verkaufspreis</b>Diese Artikel werden nicht angezeigt. Bitte in weclapp einen Preis (NET1) hinterlegen.</div></div>` : '';
-  content.innerHTML = `
-    <div class="page-head">
-      <div><div class="eyebrow">Angebotsboard · Managed Services</div><h1>${offer.customer ? esc(offer.customer.name) : 'Neues Angebot'}</h1></div>
-      <div class="page-actions">${offer.step !== 4 && (offer.customer || Object.keys(offer.qty).length) ? '<button class="btn ghost" id="offer-reset" type="button">Neu beginnen</button>' : ''}</div>
-    </div>
-    ${stepNav}${offer.step === 2 ? warn : ''}
-    <div id="offer-step"></div>
-  `;
-  $$('[data-step]').forEach((b) => (b.onclick = () => { offer.step = Number(b.dataset.step); drawOffer(); }));
-  $('#offer-reset')?.addEventListener('click', () => { if (confirm('Angebot verwerfen und neu beginnen?')) { offer.reset(); offer.term = cat.defaultTerm; drawOffer(); } });
-  ({ 1: stepCustomer, 2: stepPackages, 3: stepSign, 4: stepDone })[offer.step]($('#offer-step'));
-}
-
-// Schritt 1: Kunde
-function stepCustomer(el) {
-  el.innerHTML = `
-    <div class="card" style="max-width:720px">
-      <div class="field"><label for="cust-q">Kunde suchen (Name oder Kundennummer)</label><input id="cust-q" type="search" placeholder="z. B. Gruber oder K-10004" autocomplete="off"></div>
-      <div id="cust-results" class="cust-list"><p class="muted">Lade Kunden …</p></div>
-      <div style="margin-top:16px;display:flex;justify-content:flex-end"><button class="btn primary big" id="cust-next" type="button" ${offer.customer ? '' : 'disabled'}>Weiter zu den Leistungen</button></div>
-    </div>`;
-  let t;
-  const search = async (q) => {
-    try {
-      const { customers } = await api('/offer/customers?q=' + encodeURIComponent(q));
-      $('#cust-results').innerHTML = customers.length
-        ? customers.map((c) => `<button type="button" data-cid="${esc(c.id)}" aria-pressed="${offer.customer?.id === c.id}"><span>${esc(c.name)}</span><span class="muted">${esc(c.number || '')}</span></button>`).join('')
-        : '<p class="muted">Kein Kunde gefunden. Neue Kunden bitte zuerst in weclapp anlegen.</p>';
-      $$('[data-cid]').forEach((b) => (b.onclick = () => {
-        const c = customers.find((x) => String(x.id) === b.dataset.cid);
-        offer.customer = c;
-        offer.step = 2;
-        drawOffer();
-      }));
-    } catch (e) { $('#cust-results').innerHTML = `<p class="error">${esc(e.message)}</p>`; }
-  };
-  $('#cust-q').oninput = (e) => { clearTimeout(t); t = setTimeout(() => search(e.target.value), 250); };
-  $('#cust-next').onclick = () => { offer.step = 2; drawOffer(); };
-  $('#cust-q').focus();
-  search('');
-}
-
-// Schritt 2: Leistungen
-function stepPackages(el) {
-  const cat = offer.catalog;
-  el.innerHTML = `
-    <div class="board">
-      <div>${cat.groups.map((g) => `
-        <section class="pkg-group"><h2>${esc(g.name)}</h2><div class="pkgs">${g.items.map((it) => {
-          const q = Number(offer.qty[it.id]) || 0;
-          return `<div class="pkg ${q ? 'active' : ''}" data-pkg="${esc(it.id)}">
-            <div class="p-name">${esc(it.name)}</div>
-            <div class="p-desc">${esc(it.description)}</div>
-            <div class="p-price">${eur(it.price)} <small>/ ${esc(it.unit)}${it.billing === 'monthly' ? ' / Monat' : ' einmalig'}</small></div>
-            <div class="stepper">
-              <button type="button" data-dec="${esc(it.id)}" aria-label="${esc(it.name)} weniger">−</button>
-              <input type="number" inputmode="numeric" min="0" step="${it.step}" value="${q}" data-qty="${esc(it.id)}" aria-label="Menge ${esc(it.name)}">
-              <button type="button" data-inc="${esc(it.id)}" aria-label="${esc(it.name)} mehr">+</button>
-            </div>
-          </div>`;
-        }).join('')}</div></section>`).join('')}
-        ${!cat.groups.length ? '<div class="card empty">Keine Leistungen mit Preis gefunden.</div>' : ''}
-      </div>
-      <aside class="sumbox compactable" id="sumbox" aria-live="polite"></aside>
-    </div>`;
-  const setQty = (id, v) => {
-    const it = cat.groups.flatMap((g) => g.items).find((x) => x.id === id);
-    const q = Math.max(0, Math.round((Number(v) || 0) * 100) / 100);
-    if (q) offer.qty[id] = q; else delete offer.qty[id];
-    const box = $(`[data-pkg="${CSS.escape(id)}"]`);
-    box.classList.toggle('active', q > 0);
-    const inp = $(`[data-qty="${CSS.escape(id)}"]`);
-    if (Number(inp.value) !== q) inp.value = q;
-    void it;
-    drawSum();
-  };
-  $$('[data-inc]').forEach((b) => (b.onclick = () => setQty(b.dataset.inc, (Number(offer.qty[b.dataset.inc]) || 0) + 1)));
-  $$('[data-dec]').forEach((b) => (b.onclick = () => setQty(b.dataset.dec, (Number(offer.qty[b.dataset.dec]) || 0) - 1)));
-  $$('[data-qty]').forEach((i) => { i.oninput = () => setQty(i.dataset.qty, i.value); i.onfocus = () => i.select(); });
-  drawSum();
-}
-
-function drawSum() {
-  const cat = offer.catalog;
-  const c = calc();
-  $('#sumbox').innerHTML = `
-    <div class="s-main">
-      <div class="s-label">Monatlich netto</div>
-      <div class="s-big">${eur(c.monthly)}</div>
-      <div class="s-label" style="margin-top:2px">${eur(c.monthlyGross)} brutto inkl. ${cat.vatPercent} % USt.${c.once ? `<span class="s-once"> · einmalig ${eur(c.once)}</span>` : ''}</div>
-    </div>
-    <div class="s-lines">${c.lines.length ? c.lines.map((l) => `<div><span>${nf(l.quantity)} × ${esc(l.name)}</span><span>${eur(l.net)}</span></div>`).join('') : '<span>Noch keine Leistung gewählt.</span>'}</div>
-    <div class="s-rows">
-      <div class="s-row"><span>Einmalig netto</span><b>${eur(c.once)}</b></div>
-      <div class="s-row"><span>Gesamt über ${c.term} Monate</span><b>${eur0(c.total)}</b></div>
-    </div>
-    <div class="s-ctl">
-      <div><label for="term">Laufzeit</label>
-      <select id="term">${cat.terms.map((t) => `<option value="${t}" ${t === c.term ? 'selected' : ''}>${t} Monate${cat.termDiscounts[t] ? ` (−${cat.termDiscounts[t]} %)` : ''}</option>`).join('')}</select></div>
-      <div><label for="disc">Zusatzrabatt monatlich (%)</label>
-      <input id="disc" type="number" inputmode="decimal" min="0" max="${cat.maxDiscount}" step="0.5" value="${offer.discount || 0}"></div>
-    </div>
-    ${c.disc ? `<div class="s-label" style="margin-top:6px">Rabatt gesamt: ${nf(c.disc)} %</div>` : ''}
-    <button class="btn primary big block s-btn" id="to-sign" type="button" ${c.lines.length ? '' : 'disabled'}>Weiter zur Unterschrift</button>
-  `;
-  $('#term').onchange = (e) => { offer.term = Number(e.target.value); drawSum(); };
-  $('#disc').onchange = (e) => {
-    const v = Math.min(Math.max(Number(e.target.value) || 0, 0), cat.maxDiscount);
-    offer.discount = v;
-    drawSum();
-  };
-  $('#to-sign').onclick = () => { offer.step = 3; drawOffer(); };
-}
-
-// Schritt 3: Zusammenfassung + Unterschrift
-function stepSign(el) {
-  const cat = offer.catalog;
-  const c = calc();
-  const monthly = c.lines.filter((l) => l.billing === 'monthly');
-  const once = c.lines.filter((l) => l.billing === 'once');
-  const rows = (ls) => ls.map((l) => `<tr><td class="wrap"><b>${esc(l.name)}</b><div class="muted small">${esc(l.description)}</div></td><td class="num">${nf(l.quantity)} ${esc(l.unit)}</td><td class="num">${eur(l.price)}</td><td class="num">${eur(l.net)}${l.discount ? `<div class="muted small">−${nf(l.discount)} %</div>` : ''}</td></tr>`).join('');
-  el.innerHTML = `
-    <div class="board">
-      <div>
-        <div class="card">
-          <div class="card-head"><h2>Ihre Leistungen</h2><span class="muted">${esc(offer.customer.name)}</span></div>
-          <div class="table-wrap"><table class="summary-table">
-            <thead><tr><th>Leistung</th><th class="num">Menge</th><th class="num">Einzelpreis</th><th class="num">Netto</th></tr></thead>
-            <tbody>
-              ${monthly.length ? `<tr><td colspan="4"><b>Monatlich</b> <span class="muted">· Laufzeit ${c.term} Monate</span></td></tr>${rows(monthly)}` : ''}
-              ${once.length ? `<tr><td colspan="4"><b>Einmalig</b></td></tr>${rows(once)}` : ''}
-            </tbody>
-          </table></div>
-        </div>
-        <div class="card">
-          <h2 style="margin-bottom:12px">Beauftragung</h2>
-          <div class="grid-2" style="gap:0 16px">
-            <div class="field"><label for="sg-name">Name der unterschreibenden Person *</label><input id="sg-name" autocomplete="off" value="${esc(offer.signer.name)}"></div>
-            <div class="field"><label for="sg-role">Funktion</label><input id="sg-role" placeholder="z. B. Geschäftsführung" value="${esc(offer.signer.role)}"></div>
-          </div>
-          <div class="field"><label for="sg-mail">E-Mail für die Auftragskopie</label><input id="sg-mail" type="email" inputmode="email" value="${esc(offer.signer.email)}"></div>
-          <div class="field"><label for="sg-note">Vereinbarung / Notiz (erscheint im Auftrag)</label><textarea id="sg-note" placeholder="z. B. Leistungsbeginn 1. Jänner">${esc(offer.note)}</textarea></div>
-          <div class="field"><label>Unterschrift *</label>
-            <div class="sign-wrap"><canvas id="sign" aria-label="Unterschriftsfeld"></canvas><div class="sign-line"></div><span class="sign-hint" id="sign-hint">Hier mit dem Finger oder Stift unterschreiben</span></div>
-            <div><button class="btn ghost small" id="sign-clear" type="button" style="margin-top:6px">Unterschrift löschen</button></div>
-          </div>
-          <label class="check"><input type="checkbox" id="sg-terms" ${offer.accepted ? 'checked' : ''}><span>Ich beauftrage die angeführten Leistungen zu den genannten Konditionen. Es gelten die <a href="${esc(cat.termsUrl)}" target="_blank" rel="noopener">AGB von ${esc(cat.companyName)}</a>.</span></label>
-          <p id="sign-error" class="error" role="alert" hidden></p>
-        </div>
-      </div>
-      <aside class="sumbox">
-        <div class="s-label">Monatlich netto</div>
-        <div class="s-big">${eur(c.monthly)}</div>
-        <div class="s-label">${eur(c.monthlyGross)} brutto inkl. ${cat.vatPercent} % USt.</div>
-        <div style="height:12px"></div>
-        <div class="s-row"><span>Einmalig netto</span><b>${eur(c.once)}</b></div>
-        <div class="s-row"><span>Laufzeit</span><b>${c.term} Monate</b></div>
-        ${c.disc ? `<div class="s-row"><span>Rabatt</span><b>${nf(c.disc)} %</b></div>` : ''}
-        <div class="s-row"><span>Gesamt über die Laufzeit</span><b>${eur0(c.total)}</b></div>
-        <button class="btn primary big block" id="do-sign" type="button">Verbindlich beauftragen</button>
-        <button class="btn block" id="preview" type="button" style="margin-top:8px;background:#3A3536;color:#fff">PDF-Vorschau</button>
-      </aside>
-    </div>`;
-  const pad = signaturePad($('#sign'), () => { $('#sign-hint').hidden = true; });
-  $('#sign-clear').onclick = () => { pad.clear(); $('#sign-hint').hidden = false; };
-  const keep = () => {
-    offer.signer = { name: $('#sg-name').value, role: $('#sg-role').value, email: $('#sg-mail').value };
-    offer.note = $('#sg-note').value;
-    offer.accepted = $('#sg-terms').checked;
-  };
-  $$('#sg-name, #sg-role, #sg-mail, #sg-note, #sg-terms').forEach((i) => (i.onchange = keep));
-  const body = () => ({
-    customerId: offer.customer.id,
-    items: Object.entries(offer.qty).map(([articleId, quantity]) => ({ articleId, quantity })),
-    termMonths: c.term,
-    discountPercent: offer.discount,
-    note: offer.note,
-  });
-  $('#preview').onclick = async () => {
-    keep();
-    const w = window.open('', '_blank');
-    try {
-      const res = await api('/offer/preview', { method: 'POST', body: body(), raw: true });
-      const url = URL.createObjectURL(await res.blob());
-      if (w) w.location = url; else location.href = url;
-    } catch (e) { w?.close(); toast(e.message, true); }
-  };
-  $('#do-sign').onclick = async () => {
-    keep();
-    const err = $('#sign-error');
-    err.hidden = true;
-    const problems = [];
-    if (offer.signer.name.trim().length < 3) problems.push('Name der unterschreibenden Person fehlt');
-    if (!pad.hasInk()) problems.push('Unterschrift fehlt');
-    if (!offer.accepted) problems.push('Bitte die Beauftragung bestätigen (Häkchen)');
-    if (problems.length) { err.textContent = problems.join(' · '); err.hidden = false; return; }
-    const btn = $('#do-sign');
-    btn.disabled = true;
-    btn.textContent = 'Wird übertragen …';
-    try {
-      offer.result = await api('/offer/sign', {
-        method: 'POST',
-        body: { ...body(), signerName: offer.signer.name, signerRole: offer.signer.role, signerEmail: offer.signer.email, acceptedTerms: true, signature: pad.toDataURL() },
-      });
-      offer.step = 4;
-      drawOffer();
-    } catch (e) {
-      err.textContent = e.message;
-      err.hidden = false;
-      btn.disabled = false;
-      btn.textContent = 'Verbindlich beauftragen';
-    }
-  };
-}
-
-function signaturePad(canvas, onInk) {
-  const ctx = canvas.getContext('2d');
-  let ink = 0, drawing = false, last = null;
-  const fit = () => {
-    const r = canvas.getBoundingClientRect();
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    canvas.width = Math.round(r.width * dpr);
-    canvas.height = Math.round(r.height * dpr);
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#1B2A6B'; ctx.lineWidth = 2.4;
-    ink = 0;
-  };
-  fit();
-  const pos = (e) => { const r = canvas.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
-  canvas.addEventListener('pointerdown', (e) => { e.preventDefault(); canvas.setPointerCapture(e.pointerId); drawing = true; last = pos(e); ctx.beginPath(); ctx.arc(last.x, last.y, 1.1, 0, Math.PI * 2); ctx.fillStyle = '#1B2A6B'; ctx.fill(); });
-  canvas.addEventListener('pointermove', (e) => {
-    if (!drawing) return;
-    e.preventDefault();
-    const pts = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
-    for (const pe of pts) {
-      const p = pos(pe);
-      ctx.beginPath(); ctx.moveTo(last.x, last.y); ctx.lineTo(p.x, p.y); ctx.stroke();
-      ink += Math.hypot(p.x - last.x, p.y - last.y);
-      last = p;
-    }
-    if (ink > 0) onInk?.();
-  });
-  const end = () => { drawing = false; };
-  canvas.addEventListener('pointerup', end);
-  canvas.addEventListener('pointercancel', end);
-  return {
-    clear: () => { ctx.clearRect(0, 0, canvas.width, canvas.height); ink = 0; },
-    hasInk: () => ink > 60, // ein Punkt oder Strich reicht nicht
-    toDataURL: () => canvas.toDataURL('image/png'),
-  };
-}
-
-// Schritt 4: Fertig
-function stepDone(el) {
-  const r = offer.result;
-  const w = r.weclapp || {};
-  const mail = r.signer.email || r.customer.email || '';
-  const subject = `Ihr Auftrag Managed Services${w.salesOrderNumber ? ` Nr. ${w.salesOrderNumber}` : ''} – ${offer.catalog.companyName}`;
-  const bodyText = `Guten Tag ${r.signer.name},\n\nvielen Dank für Ihren Auftrag. Im Anhang finden Sie die unterschriebene Auftragsübersicht.\n\nMonatlich: ${eur(r.totals.monthlyNet)} netto, Laufzeit ${r.termMonths} Monate\nEinmalig: ${eur(r.totals.onceNet)} netto\n\nMit freundlichen Grüßen\n${state.me.user.name}\n${offer.catalog.companyName}`;
-  el.innerHTML = `
-    <div class="card success" style="max-width:720px;margin:0 auto">
-      <div class="big-check" aria-hidden="true">✓</div>
-      <h1 style="margin-top:14px">Auftrag erteilt</h1>
-      <p class="muted">${esc(r.customer.name)} · unterschrieben von ${esc(r.signer.name)} am ${dateTime(r.signedAt)}</p>
-      <p style="font-size:18px"><b>${eur(r.totals.monthlyNet)}</b> monatlich netto${r.totals.onceNet ? ` · <b>${eur(r.totals.onceNet)}</b> einmalig` : ''}</p>
-      ${w.quotationNumber ? `<div class="banner ok" style="text-align:left"><div><b>In weclapp angelegt</b>Angebot ${esc(w.quotationNumber)} (angenommen)${w.salesOrderNumber ? ` · Auftrag ${esc(w.salesOrderNumber)}` : ''} · PDF ist angehängt.</div></div>` : ''}
-      ${r.warnings?.length ? `<div class="banner warn" style="text-align:left"><div><b>Bitte prüfen</b>${r.warnings.map(esc).join('<br>')}${!w.quotationNumber ? '<br>Die Unterschrift ist sicher gespeichert. Unter „Vertrieb &amp; Finanzen“ kannst du die Übertragung erneut starten.' : ''}</div></div>` : ''}
-      <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:16px">
-        <a class="btn primary big" href="${esc(r.pdfUrl)}" target="_blank" rel="noopener">PDF öffnen</a>
-        ${mail ? `<a class="btn big" href="mailto:${esc(mail)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(bodyText)}">E-Mail an Kunden</a>` : ''}
-        <button class="btn ghost big" id="new-offer" type="button">Neues Angebot</button>
-      </div>
-      ${mail ? '<p class="hint" style="margin-top:12px">Beim E-Mail-Versand das PDF bitte anhängen (vorher über „PDF öffnen“ speichern).</p>' : ''}
-    </div>`;
-  $('#new-offer').onclick = () => { offer.reset(); offer.term = offer.catalog.defaultTerm; drawOffer(); };
+function renderOffer() {
+  content.classList.add('board-host');
+  renderBoard(content, { api, toast, me: state.me });
 }
 
 // =====================================================================

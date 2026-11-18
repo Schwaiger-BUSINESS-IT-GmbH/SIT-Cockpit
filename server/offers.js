@@ -1,168 +1,190 @@
-// Angebotsboard: Managed-Service-Katalog aus weclapp, Preisberechnung am Server,
-// Unterschrift -> PDF -> Angebot in weclapp (angenommen) -> optional Auftrag.
-// Jeder unterschriebene Vorgang wird ZUERST lokal gesichert, damit eine
-// Unterschrift nie verloren geht, auch wenn weclapp gerade nicht erreichbar ist.
+// Angebotsboard (Basis: SIT_Angebotsboard_V4): Katalog + SLA-Modell aus
+// config/angebotsboard.json, Berechnung am Server, Unterschrift -> PDF ->
+// (ggf. Neukunde) -> Angebot in weclapp (angenommen) -> Auftrag.
+// Jeder unterschriebene Vorgang wird ZUERST lokal gesichert.
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { config } from './config.js';
-import { request, unwrap, uploadDocument, WeclappError } from './weclapp.js';
-import { customerContact } from './sales.js';
+import { request, unwrap, uploadDocument } from './weclapp.js';
 import { renderOfferPdf } from './pdf.js';
 
 const dir = path.join(config.dataDir, 'offers');
-fs.mkdirSync(dir, { recursive: true });
+const draftDir = path.join(dir, 'drafts');
+fs.mkdirSync(draftDir, { recursive: true });
 
 const get = (token, p, query) => request(token, 'GET', p, { query }).then(unwrap);
-const n = (v) => (v == null || v === '' ? 0 : Number(v) || 0);
-const round2 = (x) => Math.round(x * 100) / 100;
+const count = (n) => (Number.isFinite(Number(n)) ? Math.max(0, Math.floor(Number(n))) : 0);
+const money = (n) => (Number.isFinite(Number(n)) ? Math.max(0, Math.round(Number(n) * 100) / 100) : 0);
+const r2 = (x) => Math.round(x * 100) / 100;
+const str = (v, max = 500) => String(v ?? '').trim().slice(0, max);
+const bad = (msg, status = 400) => Object.assign(new Error(msg), { status });
 
-// Optionale Feinsteuerung: config/angebotsboard.json (Gruppen, Einheiten-Texte, Abrechnung)
 export function boardSettings() {
+  return JSON.parse(fs.readFileSync(new URL('../config/angebotsboard.json', import.meta.url), 'utf8'));
+}
+
+// ---------- Katalog ----------
+let skuCache = { at: 0, map: null };
+async function articleIds(token, skus) {
+  if (skuCache.map && Date.now() - skuCache.at < 300e3 && skus.every((s) => s in skuCache.map)) return skuCache.map;
+  const map = {};
+  for (let i = 0; i < skus.length; i += 50) {
+    const rows = await get(token, '/article', { 'articleNumber-in': JSON.stringify(skus.slice(i, i + 50)), properties: 'id,articleNumber', pageSize: 100 });
+    for (const a of rows) map[a.articleNumber] = String(a.id);
+  }
+  for (const s of skus) if (!(s in map)) map[s] = null;
+  skuCache = { at: Date.now(), map };
+  return map;
+}
+
+function allSkus(s) {
+  return [
+    ...s.products.map((p) => p.sku),
+    ...Object.values(s.sla.skuBase), ...Object.values(s.sla.skuUser),
+    s.sla.site.sku, s.sla.setup.sku, ...Object.values(s.sla.reviews).map((r) => r.sku), s.projectSku,
+  ];
+}
+
+/** Alles, was das Board zum Anzeigen braucht, plus Abgleich mit weclapp */
+export async function catalog(token) {
+  const s = boardSettings();
+  let missing = [];
+  let weclappError = null;
   try {
-    return JSON.parse(fs.readFileSync(new URL('../config/angebotsboard.json', import.meta.url), 'utf8'));
-  } catch {
-    return {};
+    const map = await articleIds(token, allSkus(s));
+    missing = Object.entries(map).filter(([, id]) => !id).map(([sku]) => sku);
+  } catch (e) {
+    weclappError = e.message;
   }
-}
-
-const ONCE = /einricht|setup|onboarding|installation|einmalig|inbetriebnahme|migration/i;
-
-function pickPrice(article, now = Date.now()) {
-  const prices = (article.articlePrices || []).filter((p) =>
-    !p.customerId
-    && (!p.salesChannel || p.salesChannel === 'NET1')
-    && (!p.startDate || n(p.startDate) <= now)
-    && (!p.endDate || n(p.endDate) >= now));
-  prices.sort((a, b) => n(a.priceScaleValue) - n(b.priceScaleValue));
-  return prices.length ? n(prices[0].price) : null;
-}
-
-let catalogCache = { at: 0, data: null };
-
-/** Managed-Service-Artikel mit Preisen, gruppiert für das Board */
-export async function catalog(token, { fresh = false } = {}) {
-  if (!fresh && catalogCache.data && Date.now() - catalogCache.at < 300e3) return catalogCache.data;
-  const settings = boardSettings();
-  const props = 'id,articleNumber,name,description,shortDescription1,unitId,articlePrices,articleCategoryId,active';
-  let rows = [];
-  let categoryId = null;
-  const cats = await get(token, '/articleCategory', { 'name-eq': config.offerArticleCategory, pageSize: 5 }).catch(() => []);
-  if (cats[0]) {
-    categoryId = cats[0].id;
-    rows = await get(token, '/article', { 'articleCategoryId-eq': categoryId, 'active-eq': true, properties: props, pageSize: 500 });
-  }
-  if (config.offerArticleNumbers.length) {
-    const extra = await get(token, '/article', { 'articleNumber-in': JSON.stringify(config.offerArticleNumbers), properties: props, pageSize: 500 });
-    const seen = new Set(rows.map((r) => r.id));
-    rows.push(...extra.filter((r) => !seen.has(r.id)));
-  }
-  const units = Object.fromEntries((await get(token, '/unit', { pageSize: 500 }).catch(() => [])).map((u) => [u.id, u.name]));
-
-  const per = settings.articles || {};
-  const items = rows.map((a) => {
-    const s = per[a.articleNumber] || {};
-    const billing = s.billing || (ONCE.test(`${a.name} ${a.articleNumber}`) ? 'once' : 'monthly');
-    return {
-      id: String(a.id),
-      number: a.articleNumber,
-      name: s.name || a.name,
-      description: s.description || stripHtml(a.shortDescription1 || a.description || ''),
-      unit: s.unit || units[a.unitId] || 'Stk.',
-      price: s.price != null ? n(s.price) : pickPrice(a),
-      billing,
-      group: s.group || (billing === 'once' ? 'Einmalige Leistungen' : 'Managed Services'),
-      sort: s.sort ?? 999,
-      step: s.step || 1,
-      highlight: !!s.highlight,
-    };
-  }).filter((x) => x.price != null);
-
-  const order = settings.groups || [];
-  const groups = [];
-  for (const it of items.sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name, 'de'))) {
-    let g = groups.find((x) => x.name === it.group);
-    if (!g) groups.push(g = { name: it.group, items: [] });
-    g.items.push(it);
-  }
-  groups.sort((a, b) => {
-    const ia = order.indexOf(a.name), ib = order.indexOf(b.name);
-    return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || (a.name === 'Einmalige Leistungen') - (b.name === 'Einmalige Leistungen');
-  });
-
-  const data = {
-    groups,
-    category: config.offerArticleCategory,
-    categoryFound: !!categoryId,
-    missingPrices: rows.length - items.length,
-    terms: settings.terms || [12, 24, 36],
-    defaultTerm: settings.defaultTerm || 36,
-    termDiscounts: settings.termDiscounts || {},
-    maxDiscount: settings.maxDiscount ?? 20,
-    vatPercent: config.vatPercent,
-    termsUrl: config.termsUrl,
-    companyName: config.companyName,
-  };
-  catalogCache = { at: Date.now(), data };
-  return data;
-}
-
-function stripHtml(s) {
-  return String(s).replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').trim();
-}
-
-/** Positionen und Summen am Server berechnen – Preise kommen nie vom Browser */
-export async function calculate(token, input) {
-  const cat = await catalog(token);
-  const byId = new Map(cat.groups.flatMap((g) => g.items).map((i) => [i.id, i]));
-  const term = cat.terms.includes(Number(input.termMonths)) ? Number(input.termMonths) : cat.defaultTerm;
-  const termDiscount = n(cat.termDiscounts[term]);
-  const manual = Math.min(Math.max(n(input.discountPercent), 0), cat.maxDiscount);
-  const discount = Math.min(termDiscount + manual, cat.maxDiscount);
-
-  const lines = [];
-  for (const raw of input.items || []) {
-    const art = byId.get(String(raw.articleId));
-    const qty = Math.round(n(raw.quantity) * 100) / 100;
-    if (!art || qty <= 0) continue;
-    const lineDiscount = art.billing === 'monthly' ? discount : 0;
-    const net = round2(art.price * qty * (1 - lineDiscount / 100));
-    lines.push({ articleId: art.id, number: art.number, name: art.name, description: art.description, unit: art.unit, billing: art.billing, quantity: qty, unitPrice: art.price, discount: lineDiscount, net });
-  }
-  if (!lines.length) throw Object.assign(new Error('Bitte mindestens eine Leistung auswählen'), { status: 400 });
-  const monthlyNet = round2(lines.filter((l) => l.billing === 'monthly').reduce((s, l) => s + l.net, 0));
-  const onceNet = round2(lines.filter((l) => l.billing === 'once').reduce((s, l) => s + l.net, 0));
-  const vat = cat.vatPercent / 100;
   return {
-    lines,
-    termMonths: term,
-    discount,
-    totals: {
-      monthlyNet, monthlyGross: round2(monthlyNet * (1 + vat)),
-      onceNet, onceGross: round2(onceNet * (1 + vat)),
-      contractNet: round2(monthlyNet * term + onceNet),
-      vatPercent: cat.vatPercent,
-    },
+    company: s.company,
+    groups: s.groups,
+    products: s.products,
+    sla: { labels: s.sla.labels, rates: s.sla.rates, site: s.sla.site.price, setup: s.sla.setup.price, reviews: Object.fromEntries(Object.entries(s.sla.reviews).map(([k, v]) => [k, v.price])), draft: !!s.sla.draft },
+    vatPercent: s.vatPercent,
+    onboardingChecks: s.onboardingChecks,
+    offerNotesPreview: s.offerNotesPreview,
+    termsUrl: config.termsUrl,
+    missingInWeclapp: missing,
+    weclappError,
   };
 }
 
-// ---------- lokale Ablage ----------
+// ---------- Berechnung (identische Logik wie V4, aber am Server) ----------
+export function calculate(input, s = boardSettings()) {
+  const assets = Object.fromEntries(['users', 'clients', 'servers', 'firewalls', 'sites'].map((k) => [k, count(input.assets?.[k])]));
+  const monthly = [], once = [];
+  const sla = s.sla.rates[input.sla] ? input.sla : 'none';
+  if (sla !== 'none') {
+    const r = s.sla.rates[sla], label = s.sla.labels[sla];
+    monthly.push({ sku: s.sla.skuBase[sla], name: `Service-Level ${label} – Grundgebühr`, qty: 1, unit: 'Monat', price: r.base, desc: `Vertragliche Erstreaktionsziele während der vereinbarten Servicezeiten, abgestuft nach Störungspriorität (P1 ${r.p1}, P2 ${r.p2}, P3 ${r.p3}, P4 ${r.p4}). Die Reaktionszeit ist keine garantierte Entstörungszeit.` });
+    if (assets.users) monthly.push({ sku: s.sla.skuUser[sla], name: `Service-Level ${label} – Benutzer`, qty: assets.users, unit: 'User', price: r.user, desc: 'Benutzerabhängiger Anteil der Service-Level-Betreuung.' });
+    if (assets.sites > 1) monthly.push({ sku: s.sla.site.sku, name: 'Zusätzlicher Standort', qty: assets.sites - 1, unit: 'Standort', price: s.sla.site.price, desc: 'Zuschlag je weiterem vereinbartem Betriebsstandort.' });
+    const rev = s.sla.reviews[input.review];
+    if (rev) monthly.push({ sku: rev.sku, name: rev.name, qty: 1, unit: 'Monat', price: rev.price, desc: rev.desc });
+    if (input.setup !== false) once.push({ sku: s.sla.setup.sku, name: 'SLA-Einrichtung und Dokumentation', qty: 1, unit: 'einmalig', price: s.sla.setup.price, desc: 'Einmalige Standardkonfiguration und Dokumentation, bis zu 1,5 Stunden.' });
+  }
+  const chosen = [];
+  for (const p of s.products) {
+    const sel = (input.products || []).find((x) => x && x.id === p.id);
+    const qty = count(sel?.qty);
+    if (!sel || !sel.selected || !qty) continue;
+    chosen.push({ ...p, qty });
+    const price = p.threshold && qty >= p.threshold ? p.tier : p.price;
+    const custom = str(sel.custom, 20000);
+    monthly.push({ sku: p.sku, name: p.name, qty, unit: p.unit, price, group: p.group, tierActive: price !== p.price, desc: custom || `${p.scope}\n\nAbgrenzung / Voraussetzungen:\n${p.exclusions}` });
+  }
+  const proj = input.project || {};
+  if (proj.enabled && str(proj.name)) once.push({ sku: s.projectSku, name: str(proj.name, 200), qty: 1, unit: 'einmalig', price: money(proj.price), desc: 'Einmalige zusätzliche Projektleistung gemäß separater Beschreibung.', project: true });
+
+  const sum = (l) => r2(l.reduce((a, x) => a + x.price * x.qty, 0));
+  const m = sum(monthly), o = sum(once), vat = s.vatPercent / 100;
+  const totals = { monthly: m, once: o, arr: r2(m * 12), first: r2(m + o), vat: r2((m + o) * vat), gross: r2((m + o) * (1 + vat)), vatPercent: s.vatPercent };
+  return { assets, sla, review: s.sla.reviews[input.review] ? input.review : 'none', monthly, once, totals, warnings: warnings(chosen, assets, sla, s) };
+}
+
+function warnings(chosen, assets, sla, s) {
+  const out = [];
+  const has = (id) => chosen.some((p) => p.id === id);
+  if (has('clientpremium') && has('clientremote')) out.push('Managed Client Premium und Client-Flatrate: mögliche Überschneidung bei Remote-Management und Wartung prüfen.');
+  if (has('serverpremium') && has('serverremote')) out.push('Managed Server Premium und Server-Flatrate: mögliche Leistungsüberschneidung prüfen.');
+  if (has('clientremote') && chosen.some((p) => p.group === 'Security')) out.push('Die Client-Flatrate-PDF führt Endpoint-Security als enthaltene Leistung auf. Security-Pakete als Upgrade oder eigenständiges Produkt abgrenzen.');
+  if (chosen.some((p) => !p.verified)) out.push('Professional/Node: eigene Leistungsbeschreibungen fehlen. Vor Angebotsfreigabe ergänzen.');
+  if (chosen.some((p) => p.sourceCaveat)) out.push('Die allgemeine Managed-Client/Server-Beschreibung muss intern noch ausdrücklich den Premium-Artikeln zugeordnet werden.');
+  const fw = chosen.filter((p) => p.group === 'Managed Firewall').reduce((a, p) => a + p.qty, 0);
+  if (fw > assets.firewalls) out.push('Es wurden mehr Firewall-Servicepakete als angegebene Firewalls ausgewählt. Mengen prüfen.');
+  if (chosen.some((p) => ['fwessential', 'fwbusiness', 'fwpremium', 'serverremote'].includes(p.id))) out.push('Die Firewall- und Server-Flatrate-PDFs nennen Freitag 08:00–17:00 Uhr; eure Website nennt Freitag 08:00–12:00 Uhr. Vertragszeiten vor Zusage harmonisieren.');
+  if (sla !== 'none') out.push('Neues Zusatz-SLA und bestehende produktspezifische Reaktionsfristen können abweichen. Vertragliche Vorrangregelung erforderlich.');
+  if (sla !== 'none' && s.sla.draft) out.push('Die Zusatz-SLA-Preise sind noch Entwurfswerte und nicht freigegeben.');
+  return out;
+}
+
+function customerOf(input) {
+  const c = input.customer || {};
+  return { id: c.id ? String(c.id) : null, number: str(c.number, 50), company: str(c.company, 200), contact: str(c.contact, 200), mail: str(c.mail, 200), phone: str(c.phone, 100), place: str(c.place, 200) };
+}
+
+function internalOf(input) {
+  const i = input.internal || {};
+  const ratings = {};
+  for (const k of ['margin', 'support', 'loyalty', 'strategy', 'cooperation']) ratings[k] = Math.min(5, Math.max(1, count(i.ratings?.[k]) || 3));
+  return { category: ['Gold', 'Silber', 'Bronze', 'Registered'].includes(i.category) ? i.category : 'Silber', ratings, reason: str(i.reason, 3000) };
+}
+
+// ---------- Entwürfe ("Kundenstand speichern") ----------
+const draftFile = (id) => path.join(draftDir, `${id}.json`);
+const validId = (id) => /^[\w-]{6,64}$/.test(String(id || ''));
+
+export function saveDraft(input, session) {
+  const id = validId(input.draftId) ? input.draftId : `D-${Date.now().toString(36)}-${crypto.randomBytes(3).toString('hex')}`;
+  const { draftId, ...state } = input;
+  const rec = { id, updatedAt: Date.now(), user: session.name, company: str(state.customer?.company, 200) || 'Neukunde', monthly: calculate(state).totals.monthly, state };
+  fs.writeFileSync(draftFile(id), JSON.stringify(rec));
+  return { id, updatedAt: rec.updatedAt };
+}
+export function listDrafts() {
+  return fs.readdirSync(draftDir).filter((f) => f.endsWith('.json'))
+    .map((f) => { try { const { state, ...r } = JSON.parse(fs.readFileSync(path.join(draftDir, f), 'utf8')); return r; } catch { return null; } })
+    .filter(Boolean).sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 50);
+}
+export function getDraft(id) {
+  if (!validId(id) || !fs.existsSync(draftFile(id))) throw bad('Entwurf nicht gefunden', 404);
+  return JSON.parse(fs.readFileSync(draftFile(id), 'utf8'));
+}
+export function deleteDraft(id) {
+  if (validId(id) && fs.existsSync(draftFile(id))) fs.unlinkSync(draftFile(id));
+}
+
+// ---------- unterschriebene Vorgänge ----------
 const file = (id, ext) => path.join(dir, `${id}.${ext}`);
 const save = (rec) => fs.writeFileSync(file(rec.id, 'json'), JSON.stringify(rec, null, 2));
+const load = (id) => {
+  if (!/^SIT-[\w-]+$/.test(id) || !fs.existsSync(file(id, 'json'))) throw bad('Vorgang nicht gefunden', 404);
+  return JSON.parse(fs.readFileSync(file(id, 'json'), 'utf8'));
+};
+const publicRec = ({ signature, ...r }) => ({ ...r, pdfUrl: `/api/offer/${r.id}/pdf` });
 
 export function history() {
   return fs.readdirSync(dir).filter((f) => f.endsWith('.json'))
-    .map((f) => { try { return JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')); } catch { return null; } })
-    .filter(Boolean)
-    .sort((a, b) => b.signedAt - a.signedAt)
-    .slice(0, 50)
-    .map(({ signature, ...r }) => r);
+    .map((f) => { try { return publicRec(JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'))); } catch { return null; } })
+    .filter(Boolean).sort((a, b) => b.signedAt - a.signedAt).slice(0, 50);
 }
+export const getOffer = (id) => publicRec(load(id));
 
 export function pdfPath(id) {
-  if (!/^[\w-]+$/.test(id)) return null;
+  if (!/^SIT-[\w-]+$/.test(id)) return null;
   const f = file(id, 'pdf');
   return fs.existsSync(f) ? f : null;
+}
+
+export function saveOnboarding(id, checks) {
+  const rec = load(id);
+  const n = boardSettings().onboardingChecks.length;
+  rec.onboarding = Array.from({ length: n }, (_, i) => Boolean(checks?.[i]));
+  rec.onboardingUpdatedAt = Date.now();
+  save(rec);
+  return publicRec(rec);
 }
 
 function newId() {
@@ -170,122 +192,133 @@ function newId() {
   const p = (x) => String(x).padStart(2, '0');
   return `SIT-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
 }
+const validSignature = (sig) => typeof sig === 'string' && /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(sig) && sig.length > 2000 && sig.length < 1_500_000;
 
-function validSignature(sig) {
-  return typeof sig === 'string' && /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(sig) && sig.length > 2000 && sig.length < 1_500_000;
+/** Vorschau-PDF (ohne Unterschrift) */
+export async function previewPdf(input, session) {
+  const calc = calculate(input);
+  return renderOfferPdf({ id: 'ENTWURF', preview: true, customer: customerOf(input), seller: { name: session.name }, notes: str(input.notes, 3000), includeDetails: input.includeDetails !== false, ...calc });
 }
 
-/** Vorschau-PDF (ohne Unterschrift) zum Zeigen vor dem Unterschreiben */
-export async function previewPdf(token, input, session) {
-  const calc = await calculate(token, input);
-  const customer = input.customerId ? await customerContact(token, input.customerId).catch(() => null) : null;
-  return renderOfferPdf({ id: 'ENTWURF', customer, ...calc, seller: session.name, note: input.note, preview: true });
-}
-
-/** Unterschreiben: lokal sichern, PDF erzeugen, in weclapp anlegen */
+/** Unterschreiben: lokal sichern, dann weclapp */
 export async function signAndCreate(token, input, session) {
-  if (!input.customerId) throw Object.assign(new Error('Bitte einen Kunden auswählen'), { status: 400 });
-  const signerName = String(input.signerName || '').trim();
-  if (signerName.length < 3) throw Object.assign(new Error('Bitte den Namen der unterschreibenden Person eintragen'), { status: 400 });
-  if (!input.acceptedTerms) throw Object.assign(new Error('Bitte die Zustimmung zu den AGB bestätigen'), { status: 400 });
-  if (!validSignature(input.signature)) throw Object.assign(new Error('Bitte unterschreiben'), { status: 400 });
+  const customer = customerOf(input);
+  if (!customer.id && customer.company.length < 2) throw bad('Bitte den Kunden angeben (weclapp-Kunde wählen oder Unternehmen eintragen)');
+  const calc = calculate(input);
+  if (!calc.monthly.length && !calc.once.length) throw bad('Bitte mindestens eine Leistung auswählen');
+  if (calc.warnings.length && !input.ready) throw bad('Es gibt offene Prüfpunkte. Bitte intern prüfen und „Intern geprüft“ bestätigen.');
+  const signerName = str(input.signerName, 200);
+  if (signerName.length < 3) throw bad('Bitte den Namen der unterschreibenden Person eintragen');
+  if (!input.acceptedTerms) throw bad('Bitte die Beauftragung bestätigen');
+  if (!validSignature(input.signature)) throw bad('Bitte unterschreiben');
 
-  const calc = await calculate(token, input);
-  const customer = await customerContact(token, input.customerId);
   const rec = {
     id: newId(),
     status: 'signed',
     signedAt: Date.now(),
     seller: { id: session.userId, name: session.name },
     customer,
-    signer: { name: signerName, role: String(input.signerRole || '').trim(), email: String(input.signerEmail || '').trim() },
-    note: String(input.note || '').slice(0, 2000),
+    intakeNotes: str(input.intakeNotes, 3000),
+    internal: internalOf(input), // nur intern, nicht im PDF
+    notes: str(input.notes, 3000),
+    includeDetails: input.includeDetails !== false,
+    signer: { name: signerName, role: str(input.signerRole, 200), email: str(input.signerEmail, 200) },
     ...calc,
+    onboarding: boardSettings().onboardingChecks.map((_, i) => i === 3), // "Vertrag unterschrieben" ist erledigt
     signature: input.signature,
     weclapp: {},
-    warnings: [],
+    warningsWeclapp: [],
   };
-  // Prüfsumme über den Inhalt (Positionen, Summen, Kunde, Unterschrift)
-  rec.hash = crypto.createHash('sha256').update(JSON.stringify({ c: rec.customer.id, l: rec.lines, t: rec.totals, s: rec.signer, at: rec.signedAt, sig: rec.signature })).digest('hex');
+  rec.hash = crypto.createHash('sha256').update(JSON.stringify({ c: rec.customer, m: rec.monthly, o: rec.once, t: rec.totals, s: rec.signer, at: rec.signedAt, sig: rec.signature })).digest('hex');
   save(rec);
-
   return pushToWeclapp(token, rec);
 }
 
 async function pushToWeclapp(token, rec) {
-  const customer = rec.customer;
-  rec.warnings = [];
-  // 1) Angebot in weclapp anlegen
-  try {
-    const validTo = Date.now() + config.offerValidDays * 864e5;
-    const term = `Laufzeit ${rec.termMonths} Monate`;
-    const q = unwrap(await request(token, 'POST', '/quotation', {
-      body: {
-        customerId: String(customer.id),
-        quotationDate: rec.signedAt,
-        validTo,
-        commission: `Angebotsboard ${rec.id}`,
-        recordComment: `Vor Ort unterschrieben von ${rec.signer.name}${rec.signer.role ? ` (${rec.signer.role})` : ''} am ${new Date(rec.signedAt).toLocaleString('de-AT')} – erfasst von ${rec.seller.name} über das SIT-Cockpit (${rec.id}). ${term}.${rec.note ? ` Notiz: ${rec.note}` : ''}`,
-        quotationItems: rec.lines.map((l, i) => ({
-          articleId: l.articleId,
-          quantity: String(l.quantity),
-          unitPrice: String(l.unitPrice),
-          manualUnitPrice: true,
-          ...(l.discount ? { discountPercentage: String(l.discount) } : {}),
-          positionNumber: i + 1,
-          description: l.billing === 'monthly' ? `Monatliche Leistung, ${term}` : 'Einmalige Leistung',
-        })),
-      },
-    }));
-    rec.weclapp.quotationId = q.id;
-    rec.weclapp.quotationNumber = q.quotationNumber;
-  } catch (e) {
-    rec.status = 'weclapp-failed';
-    rec.warnings.push(`Angebot konnte nicht in weclapp angelegt werden: ${e.message}`);
+  rec.warningsWeclapp = [];
+  const s = boardSettings();
+  // 1) Kunde: vorhandenen nutzen oder neu anlegen
+  if (!rec.customer.id) {
+    try {
+      const p = unwrap(await request(token, 'POST', '/party', {
+        body: { partyType: 'ORGANIZATION', company: rec.customer.company, customer: true, ...(rec.customer.mail ? { email: rec.customer.mail } : {}), ...(rec.customer.phone ? { phone: rec.customer.phone } : {}) },
+      }));
+      rec.customer.id = String(p.id);
+      rec.customer.number = p.customerNumber || '';
+      rec.weclapp.partyCreated = true;
+    } catch (e) {
+      rec.status = 'weclapp-failed';
+      rec.warningsWeclapp.push(`Neukunde konnte nicht in weclapp angelegt werden: ${e.message}`);
+    }
   }
-
-  // 2) PDF mit Angebotsnummer erzeugen und lokal ablegen
+  // 2) Angebot anlegen
+  if (rec.customer.id) {
+    try {
+      const lines = [...rec.monthly, ...rec.once];
+      const ids = await articleIds(token, allSkus(s).concat(lines.map((l) => l.sku)));
+      const missing = [...new Set(lines.filter((l) => !ids[l.sku]).map((l) => l.sku))];
+      if (missing.length) throw new Error(`Artikel fehlen in weclapp: ${missing.join(', ')}`);
+      const toHtml = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/\n/g, '<br>');
+      const q = unwrap(await request(token, 'POST', '/quotation', {
+        body: {
+          customerId: rec.customer.id,
+          quotationDate: rec.signedAt,
+          validTo: rec.signedAt + config.offerValidDays * 864e5,
+          commission: `Angebotsboard ${rec.id}`,
+          recordComment: `Vor Ort unterschrieben von ${rec.signer.name}${rec.signer.role ? ` (${rec.signer.role})` : ''} am ${new Date(rec.signedAt).toLocaleString('de-AT', { timeZone: 'Europe/Vienna' })} – erfasst von ${rec.seller.name} über das SIT-Cockpit (${rec.id}).${rec.customer.contact ? ` Ansprechpartner: ${rec.customer.contact}.` : ''}${rec.notes ? ` Anmerkung: ${rec.notes}` : ''}`,
+          quotationItems: lines.map((l, i) => ({
+            articleId: ids[l.sku],
+            quantity: String(l.qty),
+            unitPrice: String(l.price),
+            manualUnitPrice: true,
+            positionNumber: i + 1,
+            ...(l.project ? { title: l.name } : {}),
+            description: toHtml(`${i < rec.monthly.length ? 'Monatlich wiederkehrend' : 'Einmalig'}${rec.includeDetails ? `\n${l.desc}` : ''}`),
+          })),
+        },
+      }));
+      rec.weclapp.quotationId = String(q.id);
+      rec.weclapp.quotationNumber = q.quotationNumber;
+    } catch (e) {
+      rec.status = 'weclapp-failed';
+      rec.warningsWeclapp.push(`Angebot konnte nicht in weclapp angelegt werden: ${e.message}`);
+    }
+  }
+  // 3) PDF (mit Angebotsnummer, falls vorhanden) lokal ablegen
   const pdf = await renderOfferPdf({ ...rec, preview: false });
   fs.writeFileSync(file(rec.id, 'pdf'), pdf);
-  const fileName = `${rec.weclapp.quotationNumber || rec.id}_Auftrag_unterschrieben.pdf`.replace(/[^\w.-]+/g, '_');
-
+  // 4) PDF anhängen, annehmen -> Auftrag
   if (rec.weclapp.quotationId) {
-    // 3) PDF an das Angebot hängen
-    await uploadDocument(token, { entityName: 'quotation', entityId: rec.weclapp.quotationId, fileName, contentType: 'application/pdf', data: pdf, description: `Unterschrieben von ${rec.signer.name}` })
-      .catch((e) => rec.warnings.push(`PDF konnte nicht an das Angebot gehängt werden: ${e.message}`));
-    // 4) Angebot annehmen (-> Auftrag) bzw. nur als angenommen markieren
-    await acceptQuotation(token, rec, pdf, fileName)
-      .catch((e) => rec.warnings.push(`Angebot wurde angelegt, aber nicht angenommen: ${e.message}`));
-    rec.status = rec.warnings.length ? 'partial' : 'done';
+    const fileName = `${rec.weclapp.quotationNumber || rec.id}_Auftrag_unterschrieben.pdf`.replace(/[^\w.-]+/g, '_');
+    const desc = `Unterschrieben von ${rec.signer.name}`;
+    await uploadDocument(token, { entityName: 'quotation', entityId: rec.weclapp.quotationId, fileName, contentType: 'application/pdf', data: pdf, description: desc })
+      .catch((e) => rec.warningsWeclapp.push(`PDF konnte nicht an das Angebot gehängt werden: ${e.message}`));
+    try {
+      if (config.offerCreateSalesOrder) {
+        await request(token, 'POST', `/quotation/id/${rec.weclapp.quotationId}/accept`, { body: { quotationType: 'SALES_ORDER' } });
+        const [order] = await get(token, '/salesOrder', { 'quotationId-eq': rec.weclapp.quotationId, properties: 'id,orderNumber', pageSize: 1 }).catch(() => []);
+        if (order) {
+          rec.weclapp.salesOrderId = String(order.id);
+          rec.weclapp.salesOrderNumber = order.orderNumber;
+          await uploadDocument(token, { entityName: 'salesOrder', entityId: order.id, fileName, contentType: 'application/pdf', data: pdf, description: desc })
+            .catch((e) => rec.warningsWeclapp.push(`PDF konnte nicht an den Auftrag gehängt werden: ${e.message}`));
+        }
+      } else {
+        await request(token, 'POST', `/quotation/id/${rec.weclapp.quotationId}/updateStatus`, { body: { status: 'ACCEPTED' } });
+      }
+    } catch (e) {
+      rec.warningsWeclapp.push(`Angebot wurde angelegt, aber nicht angenommen: ${e.message}`);
+    }
+    rec.status = rec.warningsWeclapp.length ? 'partial' : 'done';
   }
   save(rec);
-  const { signature, ...out } = rec;
-  return { ...out, pdfUrl: `/api/offer/${rec.id}/pdf` };
-}
-
-async function acceptQuotation(token, rec, pdf, fileName) {
-  const id = rec.weclapp.quotationId;
-  if (!config.offerCreateSalesOrder) {
-    await request(token, 'POST', `/quotation/id/${id}/updateStatus`, { body: { status: 'ACCEPTED' } });
-    return;
-  }
-  await request(token, 'POST', `/quotation/id/${id}/accept`, { body: { quotationType: 'SALES_ORDER' } });
-  const [order] = await get(token, '/salesOrder', { 'quotationId-eq': id, properties: 'id,orderNumber', pageSize: 1 }).catch(() => []);
-  if (order) {
-    rec.weclapp.salesOrderId = order.id;
-    rec.weclapp.salesOrderNumber = order.orderNumber;
-    await uploadDocument(token, { entityName: 'salesOrder', entityId: order.id, fileName, contentType: 'application/pdf', data: pdf, description: `Unterschrieben von ${rec.signer.name}` })
-      .catch((e) => rec.warnings.push(`PDF konnte nicht an den Auftrag gehängt werden: ${e.message}`));
-  }
+  return publicRec(rec);
 }
 
 /** Fehlgeschlagene weclapp-Übertragung erneut versuchen (Unterschrift und Zeitpunkt bleiben original) */
 export async function retry(token, id) {
-  if (!/^[\w-]+$/.test(id) || !fs.existsSync(file(id, 'json'))) throw Object.assign(new Error('Vorgang nicht gefunden'), { status: 404 });
-  const rec = JSON.parse(fs.readFileSync(file(id, 'json'), 'utf8'));
-  if (rec.weclapp?.quotationId) throw Object.assign(new Error('Vorgang ist bereits in weclapp angelegt'), { status: 409 });
-  rec.status = 'signed';
+  const rec = load(id);
+  if (rec.weclapp?.quotationId) throw bad('Vorgang ist bereits in weclapp angelegt', 409);
+  skuCache = { at: 0, map: null }; // evtl. inzwischen angelegte Artikel finden
   return pushToWeclapp(token, rec);
 }
-
-export { WeclappError };

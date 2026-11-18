@@ -121,13 +121,21 @@ api.get('/dashboard', h(async (req, res) => {
 api.get('/offer/catalog', h(async (req, res) => res.json(await offers.catalog(req.session.token))));
 api.get('/offer/customers', h(async (req, res) => res.json({ customers: await sales.searchCustomers(req.session.token, req.query.q) })));
 api.get('/offer/customers/:id', h(async (req, res) => res.json(await sales.customerContact(req.session.token, req.params.id))));
+api.post('/offer/calculate', h(async (req, res) => res.json(offers.calculate(req.body || {}))));
 api.post('/offer/preview', h(async (req, res) => {
-  const pdf = await offers.previewPdf(req.session.token, req.body || {}, req.session);
-  res.type('application/pdf').send(pdf);
+  const pdf = await offers.previewPdf(req.body || {}, req.session);
+  res.type('application/pdf').setHeader('Content-Disposition', 'inline; filename="Angebot_Entwurf.pdf"');
+  res.send(pdf);
 }));
 api.post('/offer/sign', h(async (req, res) => res.json(await offers.signAndCreate(req.session.token, req.body || {}, req.session))));
-api.post('/offer/:id/retry', h(async (req, res) => res.json(await offers.retry(req.session.token, req.params.id))));
+api.get('/offer/drafts', h(async (req, res) => res.json({ drafts: offers.listDrafts() })));
+api.post('/offer/drafts', h(async (req, res) => res.json(offers.saveDraft(req.body || {}, req.session))));
+api.get('/offer/drafts/:id', h(async (req, res) => res.json(offers.getDraft(req.params.id))));
+api.delete('/offer/drafts/:id', h(async (req, res) => { offers.deleteDraft(req.params.id); res.json({ ok: true }); }));
 api.get('/offer/history', h(async (req, res) => res.json({ offers: offers.history() })));
+api.get('/offer/:id', h(async (req, res) => res.json(offers.getOffer(req.params.id))));
+api.put('/offer/:id/onboarding', h(async (req, res) => res.json(offers.saveOnboarding(req.params.id, req.body?.checks))));
+api.post('/offer/:id/retry', h(async (req, res) => res.json(await offers.retry(req.session.token, req.params.id))));
 api.get('/offer/:id/pdf', h(async (req, res) => {
   const file = offers.pdfPath(req.params.id);
   if (!file) return res.status(404).json({ error: 'PDF nicht gefunden' });

@@ -72,7 +72,7 @@ AzOk webapp config appsettings set -g $ResourceGroup -n $AppName -o none --setti
   "WECLAPP_TENANT=$WeclappTenant" "SESSION_SECRET=$sessionSecret" `
   'COOKIE_SECURE=1' 'REQUIRE_ENTRA=1' 'DATA_DIR=/home/data' 'ROUND_MINUTES=15' `
   'ARTICLE_TYPE=SERVICE' 'SCM_DO_BUILD_DURING_DEPLOYMENT=false' 'WEBSITES_ENABLE_APP_SERVICE_STORAGE=true' `
-  "WECLAPP_WEB_URL=https://$WeclappTenant.weclapp.com/webapp" 'OFFER_ARTICLE_CATEGORY=Managed Services'
+  "WECLAPP_WEB_URL=https://$WeclappTenant.weclapp.com/webapp"
 if ($AteraApiKey) {
   AzOk webapp config appsettings set -g $ResourceGroup -n $AppName -o none --settings "ATERA_API_KEY=$AteraApiKey"
 } elseif (-not ($existing | Where-Object name -eq 'ATERA_API_KEY')) {

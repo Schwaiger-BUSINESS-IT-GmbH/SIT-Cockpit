@@ -33,10 +33,6 @@ export const config = {
   serverOfflineMinutes: num(process.env.SERVER_OFFLINE_MINUTES, 15),
   workstationOfflineDays: num(process.env.WORKSTATION_OFFLINE_DAYS, 7),
   // ---------- Angebotsboard ----------
-  // Artikelkategorie in weclapp mit den Managed-Service-Artikeln
-  offerArticleCategory: process.env.OFFER_ARTICLE_CATEGORY || 'Managed Services',
-  // Alternativ/zusätzlich: feste Artikelnummern (kommagetrennt)
-  offerArticleNumbers: list(process.env.OFFER_ARTICLE_NUMBERS),
   // Nach der Unterschrift automatisch einen Auftrag erzeugen
   offerCreateSalesOrder: process.env.OFFER_CREATE_SALES_ORDER !== '0',
   offerValidDays: num(process.env.OFFER_VALID_DAYS, 30),

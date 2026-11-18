@@ -1,23 +1,236 @@
 {
-  "_hinweis": "Feinsteuerung für das Angebotsboard. Artikel und Preise kommen aus weclapp (Artikelkategorie OFFER_ARTICLE_CATEGORY). Hier nur Gruppierung, Abrechnungsart und Texte überschreiben. billing: monthly | once",
-  "groups": ["Arbeitsplatz & Benutzer", "Sicherheit", "Server & Netzwerk", "Einmalige Leistungen"],
-  "terms": [12, 24, 36],
-  "defaultTerm": 36,
-  "termDiscounts": {},
-  "maxDiscount": 20,
-  "pdfTerms": ["Alle Preise in Euro.", "Es gelten die Allgemeinen Geschäftsbedingungen von {firma} ({agb})."],
-  "pdfTermsMonthly": "Monatliche Leistungen werden monatlich im Voraus verrechnet, die Laufzeit beträgt {laufzeit} Monate ab Leistungsbeginn.",
-  "pdfTermsOnce": "Einmalige Leistungen werden nach Erbringung verrechnet.",
-  "articles": {
-    "MS-WS":        { "group": "Arbeitsplatz & Benutzer", "billing": "monthly", "sort": 1, "highlight": true },
-    "MS-M365":      { "group": "Arbeitsplatz & Benutzer", "billing": "monthly", "sort": 2 },
-    "MS-SEC-MAIL":  { "group": "Sicherheit", "billing": "monthly", "sort": 3 },
-    "MS-EDR":       { "group": "Sicherheit", "billing": "monthly", "sort": 4 },
-    "MS-SRV":       { "group": "Server & Netzwerk", "billing": "monthly", "sort": 5, "highlight": true },
-    "MS-FW":        { "group": "Server & Netzwerk", "billing": "monthly", "sort": 6 },
-    "MS-BACKUP":    { "group": "Server & Netzwerk", "billing": "monthly", "sort": 7 },
-    "MS-SETUP-WS":  { "group": "Einmalige Leistungen", "billing": "once", "sort": 8 },
-    "MS-SETUP-SRV": { "group": "Einmalige Leistungen", "billing": "once", "sort": 9 },
-    "MS-ONBOARD":   { "group": "Einmalige Leistungen", "billing": "once", "sort": 10 }
-  }
+  "_hinweis": "Angebotsboard (Basis: SIT_Angebotsboard_V4). Produkte, Preise, Staffeln und Leistungsbeschreibungen werden hier gepflegt. Jede sku muss in weclapp als Artikel mit gleicher Artikelnummer existieren, sonst kann das Angebot nicht angelegt werden (Vorgang bleibt gespeichert, erneut senden möglich).",
+  "company": {
+    "name": "Schwaiger BUSINESS IT GmbH",
+    "address": "Wiener Straße 8 · 9400 Wolfsberg · Österreich",
+    "email": "office@schwaiger-it.at"
+  },
+  "groups": [
+    "Security",
+    "Managed Services",
+    "Managed Firewall",
+    "Support-Flatrates"
+  ],
+  "products": [
+    {
+      "id": "secultimate",
+      "sku": "SIT-SEC-ULT",
+      "name": "SIT Next Security – Ultimate Edition",
+      "group": "Security",
+      "unit": "Endgerät",
+      "price": 25,
+      "tier": 23,
+      "threshold": 30,
+      "verified": true,
+      "source": "Leistungsbeschreibung SIT NEXT Security Ultimate.pdf",
+      "brief": "Kaspersky Next MXDR Optimum, 24/7 Security-Monitoring, Threat Hunting und Threat Data Feeds.",
+      "scope": "Leistungsumfang gemäß eingereichter Beschreibung:\n• Managed Detection and Response auf Basis Kaspersky Next MXDR Optimum\n• 24/7 Security-Monitoring und Threat Hunting durch Security-Spezialisten\n• Analyse, Priorisierung und Begleitung sicherheitsrelevanter Vorfälle\n• Verhaltensbasierte Erkennung, Cloud-Sandboxing, IoC-Analyse und Root-Cause-Analyse\n• Erweiterter Endgeräteschutz, Härtung und Funktionen zur Schwachstellenbewertung\n• Kaspersky Threat Data Feeds für URL- und IP-Indikatoren\n• Security-Telemetrie mit einer im Dokument beschriebenen Speicherdauer von drei Monaten\n• Betriebsarbeitszeit für laufende Security-Überwachung und Bewertung von Meldungen",
+      "exclusions": "Die 24/7-Security-Überwachung ist keine zugesagte 24/7-Erreichbarkeit des SIT-Supports oder garantierte Wiederherstellungszeit. Die tatsächlichen Response-Maßnahmen richten sich nach der vereinbarten Leistung und den technischen Möglichkeiten."
+    },
+    {
+      "id": "secprofessional",
+      "sku": "SIT-SEC-PRO",
+      "name": "SIT Next Security Client Professional Edition",
+      "group": "Security",
+      "unit": "Endgerät",
+      "price": 19,
+      "tier": 17,
+      "threshold": 30,
+      "verified": false,
+      "source": "Produktbeschreibung nicht übermittelt",
+      "brief": "Security-Edition – die produktgenaue Leistungsbeschreibung steht noch aus.",
+      "scope": "Noch keine freigegebene Leistungsbeschreibung vorhanden. Vor Angebotsfreigabe Produktumfang, Schutzfunktionen, Management, Reaktionsprozesse und Abgrenzung zur Ultimate Edition definieren.",
+      "exclusions": "Keine Leistungsmerkmale der Ultimate Edition automatisch enthalten."
+    },
+    {
+      "id": "secnode",
+      "sku": "SIT-SEC-NODE",
+      "name": "SIT Next Security Client Node Edition",
+      "group": "Security",
+      "unit": "Node",
+      "price": 14,
+      "tier": 12,
+      "threshold": 30,
+      "verified": false,
+      "source": "Produktbeschreibung nicht übermittelt",
+      "brief": "Node-Security-Edition – die produktgenaue Leistungsbeschreibung steht noch aus.",
+      "scope": "Noch keine freigegebene Leistungsbeschreibung vorhanden. Vor Angebotsfreigabe unterstützte Node-Typen, Lizenzen, Schutzfunktionen, Monitoring und Reaktionsprozesse definieren.",
+      "exclusions": "Keine Leistungsmerkmale der Professional- oder Ultimate-Edition automatisch enthalten."
+    },
+    {
+      "id": "clientpremium",
+      "sku": "SIT-MCLI-PRE",
+      "name": "SIT Managed Client Premium",
+      "group": "Managed Services",
+      "unit": "Client",
+      "price": 18,
+      "verified": true,
+      "source": "Leistungsbeschreibung Managed Client_Server.pdf",
+      "sourceCaveat": "Das PDF ist allgemein für Managed Client/Server formuliert. Die genaue Zuordnung zu Premium muss intern bestätigt werden.",
+      "brief": "Proaktive Systemüberwachung, Patch-Management, Fernadministration und monatliches Reporting.",
+      "scope": "Vorgesehener Leistungsumfang gemäß PDF „Managed Client / Server“:\n• Kontinuierliches Monitoring von CPU, RAM, Speicher, Diensten und Systemereignissen\n• Automatische Alarmierung bei erkennbaren Störungen\n• Überwachung fehlender Sicherheitsupdates und geplante Windows-Updates\n• Dokumentation des Patch-Status und abgestimmte Wartungsfenster\n• Remote-Administration, Fehleranalyse und Neustart-/Serviceverwaltung\n• Automatisierte Systemprüfungen, Bereinigung temporärer Dateien und Kontrolle sicherheitsrelevanter Einstellungen\n• Monatlicher Systemstatusbericht und Dokumentation administrativer Tätigkeiten",
+      "exclusions": "Keine eigenen Premium-SLA-Zusagen im PDF. Umfang eventueller Benutzer-Supportleistungen und Abgrenzung zur separaten Client Flatrate vor Freigabe prüfen. 24/7 Monitoring ist keine 24/7 besetzte SIT-Servicehotline."
+    },
+    {
+      "id": "serverpremium",
+      "sku": "SIT-MSRV-PRE",
+      "name": "SIT Managed Server Premium",
+      "group": "Managed Services",
+      "unit": "Server",
+      "price": 99,
+      "verified": true,
+      "source": "Leistungsbeschreibung Managed Client_Server.pdf",
+      "sourceCaveat": "Das PDF ist allgemein für Managed Client/Server formuliert. Die genaue Zuordnung zu Premium muss intern bestätigt werden.",
+      "brief": "Proaktiver Serverbetrieb mit Monitoring, Patch-Management, Wartungsautomatisierung und Reporting.",
+      "scope": "Vorgesehener Leistungsumfang gemäß PDF „Managed Client / Server“:\n• 24/7 technische Systemüberwachung mit Statuskontrolle relevanter Ressourcen, Dienste und Prozesse\n• Automatische Alarmierung auf technische Störungen\n• Geplante Updates und Patch-Statusdokumentation\n• Sichere Fernadministration mit Diagnose, Neustart- und Serviceverwaltung\n• Regelmäßige automatisierte Wartungsprüfungen\n• Monatlicher Serverstatus- und Updatebericht\n• Dokumentation administrativer Tätigkeiten",
+      "exclusions": "Keine eigenen Premium-Reaktionszeiten im übermittelten Managed-Client/Server-Dokument. Abgrenzung zur separaten Server Flatrate klären. 24/7 Monitoring bedeutet nicht automatisch menschliche Bereitschaft rund um die Uhr."
+    },
+    {
+      "id": "fwessential",
+      "sku": "SIT-MFW-ESS",
+      "name": "SIT Managed Firewall Essential",
+      "group": "Managed Firewall",
+      "unit": "FortiGate",
+      "price": 149,
+      "verified": true,
+      "source": "Leistungsbeschreibung SIT Managed Firewall.pdf",
+      "brief": "Basisbetrieb, Monitoring, Konfigurations-Backup, Firmwarepflege und 30 Minuten Änderungen.",
+      "scope": "FortiGate Managed Firewall – Essential:\n• Übernahme und Dokumentation der vereinbarten FortiGate\n• Überwachung von Erreichbarkeit, Betriebsstatus und relevanten Ereignissen\n• Sicherstellung von Konfigurations-Backups\n• Prüfung und kontrollierte Installation freigegebener Firmware\n• Ticket-Support und Basis-Regelmanagement\n• Bis zu 30 Minuten übliche Regel-/NAT-/VPN-Änderungen pro Monat\n• Monatliches Kurzreporting",
+      "exclusions": "Aktive FortiGuard-UTP-Lizenz verpflichtend, vom Kunden separat zu finanzieren. Keine FortiGate-Hardware, LAN-/WLAN-Support außerhalb der Firewall, Vor-Ort-Arbeit, Projekte oder gesonderte SOC-/MDR-Leistungen enthalten. Über 30 Minuten hinausgehende Änderungen werden separat verrechnet."
+    },
+    {
+      "id": "fwbusiness",
+      "sku": "SIT-MFW-BUS",
+      "name": "SIT Managed Firewall Business",
+      "group": "Managed Firewall",
+      "unit": "FortiGate",
+      "price": 249,
+      "verified": true,
+      "source": "Leistungsbeschreibung SIT Managed Firewall.pdf",
+      "brief": "Essential-Leistungen plus erweiterte VPN-/Policy-Betreuung, 60 Minuten Änderungen und Quartalsreview.",
+      "scope": "FortiGate Managed Firewall – Business:\n• Sämtliche Basisleistungen aus Essential\n• Bis zu 60 Minuten übliche Änderungen monatlich\n• Erweiterte Policy- und VPN-Betreuung\n• Priorisierte Bearbeitung von Firewall-Störungen\n• Quartalsweises Firewall-Service-Review\n• Erweitertes Reporting über Betrieb, Änderungen und Auffälligkeiten",
+      "exclusions": "Aktive FortiGuard-UTP-Lizenz separat erforderlich. Hardware, Drittanbieter-Infrastruktur, Vor-Ort-Arbeit, Projektleistungen und SOC-/MDR-Dienste nicht enthalten. Umfangreiche Redesigns und Änderungsaufwand über 60 Minuten gesondert."
+    },
+    {
+      "id": "fwpremium",
+      "sku": "SIT-MFW-PRE",
+      "name": "SIT Managed Firewall Premium",
+      "group": "Managed Firewall",
+      "unit": "FortiGate",
+      "price": 449,
+      "verified": true,
+      "source": "Leistungsbeschreibung SIT Managed Firewall.pdf",
+      "brief": "Business-Leistungen plus 120 Minuten Änderungen, komplexe Szenarien und vertiefte Reviews.",
+      "scope": "FortiGate Managed Firewall – Premium:\n• Sämtliche Leistungen aus Business\n• Bis zu 120 Minuten übliche Änderungen monatlich\n• Unterstützung komplexer Firewall- und VPN-Szenarien\n• Erweiterte Incident-Unterstützung im Einflussbereich der Firewall\n• Individuelle Betriebsabstimmung sowie vertiefte Reviews und Reporting",
+      "exclusions": "Aktive FortiGuard-UTP-Lizenz separat erforderlich. Keine Geräte-, Provider- oder Hardwarekosten. Kein unbegrenztes Change-Kontingent und kein automatisch enthaltener 24/7-Bereitschaftsdienst."
+    },
+    {
+      "id": "clientremote",
+      "sku": "SIT-SUP-CLI",
+      "name": "SIT Client Flatrate – Fernunterstützung",
+      "group": "Support-Flatrates",
+      "unit": "Client",
+      "price": 19.9,
+      "verified": true,
+      "source": "Leistungsbeschreibung SIT Client Flatrate.pdf + ausdrückliche Nutzerpräzisierung",
+      "brief": "Standardisierte Client-Betreuung, Remote-Service, Client-Management und IT-Betriebsunterstützung.",
+      "scope": "Leistungsumfang gemäß SIT Client Flatrate:\n• Betreuung standardisierter Desktop-PCs und Notebooks; mobile Geräte optional\n• Windows-/macOS-Basiskonfiguration, Einbindung in Domäne/Entra ID bzw. MDM\n• Benutzer-/Geräteverwaltung sowie standardisierte Neuaufsetzung/Austausch\n• Automatisierte Betriebssystem- und freigegebene Softwareupdates\n• Permanentes Monitoring relevanter Client-Zustände und proaktive Standardwartung\n• Remote-Support per Fernzugriff, Telefon und E-Mail\n• Betreuung von Standardanwendungen wie Microsoft 365 und Passwort-/Profilanpassungen\n• Laut PDF Endpoint-Security, Basis-Hardening und dokumentierte Geräteübersicht\n• Keine Vor-Ort-Einsätze in diesem Artikel",
+      "exclusions": "Ausdrücklich ohne Vor-Ort-Einsätze: Anfahrt und Technikereinsatz am Standort werden gesondert verrechnet. Keine Migrationen, größeren Rollouts, Spezialsoftware, Hardware-Reparaturen oder Anwenderschulungen. Das PDF erwähnt enthaltene Endpoint-Security; bei zusätzlichem Next Security Produkt ist die Abgrenzung zu prüfen. Dokumentierte Servicezeiten Mo–Do 08–17, Fr 08–12, Feiertage ausgenommen."
+    },
+    {
+      "id": "serverremote",
+      "sku": "SIT-SUP-SRV",
+      "name": "SIT Server Flatrate – Fernunterstützung",
+      "group": "Support-Flatrates",
+      "unit": "Server",
+      "price": 49.9,
+      "verified": true,
+      "source": "Leistungsbeschreibung SIT Server Flatrate.pdf + ausdrückliche Nutzerpräzisierung",
+      "brief": "Remote-Betreuung für physische und virtuelle Server inklusive Betriebsaufgaben, Updates und Störungsanalyse.",
+      "scope": "Leistungsumfang gemäß SIT Server Flatrate:\n• Betreuung unterstützter physischer und virtueller Server (z. B. Hyper-V/VMware; Windows, Linux nach Vereinbarung)\n• Servergrundkonfiguration und Integration in bestehende Infrastruktur\n• Verwaltung üblicher Dienste und Berechtigungsstrukturen\n• 24/7 Systemmonitoring und geplante Wartungsarbeiten\n• Betriebssystem- und Sicherheitsupdates im abgestimmten Wartungsfenster\n• Remote-Fehleranalyse, serverbezogene Entstörung und Eskalationsmanagement\n• Basis-Hardening, Server-Security-Begleitung und Systemdokumentation\n• Backup-Job-Überwachung nur optional bei separater Beauftragung\n• Keine Vor-Ort-Einsätze in diesem Artikel",
+      "exclusions": "Ausdrücklich ohne Vor-Ort-Einsätze: Anfahrt und Technikereinsatz am Standort werden gesondert verrechnet. Keine Projekte, Migrationen, Spezialapplikationen, Hardware, Lizenzen oder Disaster-Recovery-Arbeiten außerhalb definierter Leistungen. Laut PDF Servicezeiten Mo–Fr 08–17 (abweichend von den Zeiten auf der Website); Vertragsregelung abgleichen."
+    }
+  ],
+  "sla": {
+    "draft": true,
+    "labels": {
+      "none": "Ohne Zusatz-SLA",
+      "standard": "Standard",
+      "priority": "Priority",
+      "premium": "Premium"
+    },
+    "rates": {
+      "standard": {
+        "base": 99,
+        "user": 4,
+        "p1": "4 Stunden",
+        "p2": "8 Stunden",
+        "p3": "2 Arbeitstage",
+        "p4": "3 Arbeitstage"
+      },
+      "priority": {
+        "base": 199,
+        "user": 7,
+        "p1": "2 Stunden",
+        "p2": "4 Stunden",
+        "p3": "1 Arbeitstag",
+        "p4": "2 Arbeitstage"
+      },
+      "premium": {
+        "base": 399,
+        "user": 12,
+        "p1": "1 Stunde",
+        "p2": "2 Stunden",
+        "p3": "4 Stunden",
+        "p4": "1 Arbeitstag"
+      }
+    },
+    "skuBase": {
+      "standard": "SIT-SLA-STD-G",
+      "priority": "SIT-SLA-PRI-G",
+      "premium": "SIT-SLA-PRE-G"
+    },
+    "skuUser": {
+      "standard": "SIT-SLA-STD-U",
+      "priority": "SIT-SLA-PRI-U",
+      "premium": "SIT-SLA-PRE-U"
+    },
+    "site": {
+      "sku": "SIT-SLA-SITE",
+      "price": 59
+    },
+    "setup": {
+      "sku": "SIT-SLA-SETUP",
+      "price": 290
+    },
+    "reviews": {
+      "annual": {
+        "sku": "SIT-GOV-YR",
+        "name": "Jährliches IT-Service-Review",
+        "price": 49,
+        "desc": "Ein jährliches IT-Servicegespräch mit Vorbereitung und Ergebnisprotokoll im vereinbarten Umfang."
+      },
+      "quarter": {
+        "sku": "SIT-GOV-QBR",
+        "name": "Quartalsweise IT-Strategiebetreuung",
+        "price": 179,
+        "desc": "Vier IT-Strategie- und Servicegespräche pro Jahr inklusive Vorbereitung und Protokoll im vereinbarten Umfang."
+      }
+    }
+  },
+  "projectSku": "SIT-PROJEKT",
+  "vatPercent": 20,
+  "onboardingChecks": [
+    "Kundendaten und Ansprechpartner verifiziert",
+    "Vertragsumfang inklusive möglicher Leistungsüberschneidungen freigegeben",
+    "Servicezeiten und SLA-Rangfolge schriftlich bestätigt",
+    "Vertrag und Leistungsblätter unterschrieben",
+    "Bestandsaufnahme, Inventar und Zugangsdokumentation abgeschlossen",
+    "RMM und Monitoring je beauftragtem System eingerichtet",
+    "Security-, Firewall- und Backup-Status samt Lizenzen geprüft",
+    "Wiederkehrende Vertrags- und Rechnungspositionen in Weclapp angelegt",
+    "Technische Übergabe und Kunden-Kick-off dokumentiert"
+  ],
+  "offerNotesPreview": "Dieses Dokument ist eine unverbindliche Angebotsvorschau. Verbindliche Leistungsumfänge, Mindestlaufzeiten, Servicefenster, Reaktionsfristen, Vor-Ort-Umfang, Lizenzen und Ausschlüsse werden im finalen Vertrag bzw. den freigegebenen Leistungsbeschreibungen festgelegt. Es werden keine garantierten Entstörungszeiten zugesagt, sofern nicht ausdrücklich schriftlich vereinbart. Die Client- und Server-Support-Flatrates enthalten keine Vor-Ort-Einsätze. Preise netto zuzüglich anwendbarer Umsatzsteuer.",
+  "offerNotesSigned": "Mit der Unterschrift beauftragt der Kunde die angeführten Leistungen zu den genannten Preisen. Leistungsumfang und Abgrenzung ergeben sich aus den Leistungsbeschreibungen dieses Dokuments bzw. den freigegebenen Leistungsblättern. Es werden keine garantierten Entstörungszeiten zugesagt, sofern nicht ausdrücklich schriftlich vereinbart. Die Client- und Server-Support-Flatrates enthalten keine Vor-Ort-Einsätze. Preise netto zuzüglich anwendbarer Umsatzsteuer. Es gelten die AGB von {firma} ({agb})."
 }

@@ -1,5 +1,7 @@
 // Vertriebsteil des weclapp-Mocks: Managed-Service-Artikel, Angebote,
 // Aufträge, Rechnungen, Verträge. Feld- und Statusnamen wie in der weclapp-API v2.
+import fs from 'node:fs';
+
 const D = 864e5;
 const now = Date.now();
 const ago = (days) => now - days * D;
@@ -7,20 +9,19 @@ const ago = (days) => now - days * D;
 export function registerSales(r, { applyFilters, parties, tickets, documents, articles }) {
   const categories = [{ id: '900', name: 'Managed Services' }, { id: '901', name: 'Hardware' }];
   const units = [{ id: 'u1', name: 'Stk.' }, { id: 'u2', name: 'Arbeitsplatz' }, { id: 'u3', name: 'Server' }, { id: 'u4', name: 'Benutzer' }, { id: 'u5', name: 'Firewall' }, { id: 'u6', name: 'Pauschale' }, { id: 'u7', name: 'Gerät' }];
-  const ms = [
-    ['MS-WS', 'Managed Workplace', 'u2', 29, 'Monitoring, Patch-Management, Virenschutz und Remote-Support für einen Arbeitsplatz.'],
-    ['MS-M365', 'Microsoft 365 Betreuung', 'u4', 6, 'Benutzerverwaltung, Lizenzen, Exchange- und Teams-Support.'],
-    ['MS-SEC-MAIL', 'E-Mail-Schutz & Awareness', 'u4', 4.5, 'Spam- und Phishing-Filter, Security-Awareness-Training.'],
-    ['MS-EDR', 'Managed EDR', 'u7', 7.9, 'Erkennung und Reaktion auf Angriffe, 24/7 überwacht.'],
-    ['MS-SRV', 'Managed Server', 'u3', 99, 'Überwachung, Updates, Wartungsfenster und Störungsbehebung.'],
-    ['MS-FW', 'Managed Firewall', 'u5', 59, 'Firmware-Updates, Regelwerk-Pflege, VPN-Betreuung.'],
-    ['MS-BACKUP', 'Managed Backup (Cloud)', 'u3', 49, 'Tägliche Sicherung in ein österreichisches Rechenzentrum, Rücksicherungstests.'],
-    ['MS-SETUP-WS', 'Einrichtung Arbeitsplatz', 'u2', 49, 'Agent-Installation, Grundkonfiguration, Dokumentation.'],
-    ['MS-SETUP-SRV', 'Einrichtung Server', 'u3', 249, 'Übernahme in die Betreuung, Monitoring-Regeln, Backup-Einrichtung.'],
-    ['MS-ONBOARD', 'Onboarding & IT-Dokumentation', 'u6', 390, 'Bestandsaufnahme, Passwort-Tresor, Netzwerkplan.'],
+  // Artikel für alle Artikelnummern des Angebotsboards (config/angebotsboard.json)
+  const board = JSON.parse(fs.readFileSync(new URL('../../config/angebotsboard.json', import.meta.url), 'utf8'));
+  const skus = [
+    ...board.products.map((p) => [p.sku, p.name, p.price]),
+    ...Object.entries(board.sla.skuBase).map(([k, sku]) => [sku, `Service-Level ${board.sla.labels[k]} – Grundgebühr`, board.sla.rates[k].base]),
+    ...Object.entries(board.sla.skuUser).map(([k, sku]) => [sku, `Service-Level ${board.sla.labels[k]} – Benutzer`, board.sla.rates[k].user]),
+    [board.sla.site.sku, 'Zusätzlicher Standort', board.sla.site.price],
+    [board.sla.setup.sku, 'SLA-Einrichtung und Dokumentation', board.sla.setup.price],
+    ...Object.values(board.sla.reviews).map((r) => [r.sku, r.name, r.price]),
+    [board.projectSku, 'Projektleistung', 0],
   ];
-  ms.forEach(([articleNumber, name, unitId, price, description], i) => articles.push({
-    id: String(800 + i), articleNumber, name, unitId, description, articleType: 'SERVICE', active: true, articleCategoryId: '900',
+  skus.forEach(([articleNumber, name, price], i) => articles.push({
+    id: String(800 + i), articleNumber, name, unitId: 'u1', articleType: 'SERVICE', active: true, articleCategoryId: '900',
     articlePrices: [{ price: String(price), currencyId: '1', salesChannel: 'NET1', priceScaleValue: '1', startDate: ago(400) }],
   }));
   const priceOf = (id) => Number(articles.find((a) => a.id === id)?.articlePrices?.[0]?.price || 100);
@@ -94,6 +95,14 @@ export function registerSales(r, { applyFilters, parties, tickets, documents, ar
     p ? res.json(p) : res.status(404).json({ title: 'Not Found' });
   });
 
+  r.post('/party', (req, res) => {
+    const b = req.body || {};
+    if (!b.company) return res.status(400).json({ title: 'validation failed', messages: [{ location: 'company', message: 'company required' }] });
+    const p = { id: String(600 + parties.length), customerNumber: `K-${10100 + parties.length}`, ...b, addresses: [] };
+    parties.push(p);
+    console.log('[mock] Neukunde angelegt:', p.customerNumber, p.company);
+    res.status(201).json(p);
+  });
   r.post('/quotation', (req, res) => {
     const b = req.body || {};
     if (!parties.some((p) => p.id === String(b.customerId))) return res.status(400).json({ title: 'validation failed', messages: [{ location: 'customerId', message: 'customer not found' }] });

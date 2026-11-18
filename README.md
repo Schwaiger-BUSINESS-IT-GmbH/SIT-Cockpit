@@ -6,7 +6,7 @@ Steuerzentrale von Schwaiger Business IT – vier Bereiche in einer App, ein Log
 |---|---|---|
 | **Kunden & Geräte** | Ampel-Übersicht aller Kunden: Server offline, fehlgeschlagene Backups, kritische Alerts, volle Laufwerke, möglicher Strom-/Internetausfall. Probleme zuerst, Details auf Klick. | Atera |
 | **Vertrieb & Finanzen** | Offene Angebote (inkl. „nachfassen“), angenommene Angebote, Managed-Service-Umsatz/Monat, offene Aufträge, überfällige Rechnungen, Auftragseingang 6 Monate, eigene Zeit im Monat. | weclapp |
-| **Angebotsboard** | Am Tablet beim Kunden: Managed-Service-Pakete antippen, Mengen wählen, Preis live sehen, Kunde unterschreibt mit dem Finger → Angebot in weclapp (angenommen) + Auftrag + unterschriebenes PDF als Anhang. | weclapp |
+| **Angebotsboard** | Kunden-Onboarding am Tablet (Gestaltung nach *SIT_Angebotsboard_V4*): Erstaufnahme mit IT-Umgebung, interne Einstufung, Zusatz-SLA + Managed-Service-Katalog mit Staffelpreisen und Leistungsbeschreibungen, Angebotsvorschau, Unterschrift mit dem Finger → (Neu-)Kunde, Angebot (angenommen), Auftrag und PDF in weclapp, danach Onboarding-Checkliste. Umschaltbare Kundenansicht ohne interne Daten. | weclapp |
 | **Zeiten** | SIT-Time (Ticket-Zeiterfassung, Arbeitszeit) – eingebettet, gleicher Login. | weclapp |
 
 ## Schnellstart (Demo mit Beispieldaten)
@@ -31,19 +31,23 @@ npm start
 
 1. **Atera:** API-Schlüssel unter *Admin → API* erzeugen → `ATERA_API_KEY`.
    Für die Verknüpfung mit weclapp ein Kunden-Zusatzfeld **„weclapp-Kundennummer“** anlegen und befüllen (sonst wird nach exaktem Firmennamen gesucht).
-2. **weclapp:** Artikelkategorie **„Managed Services“** anlegen, die Managed-Service-Artikel zuordnen und jeweils einen Verkaufspreis (Preisliste NET1) pflegen. Einmalige Leistungen werden am Namen erkannt (Einrichtung, Setup, Onboarding …) oder in `config/angebotsboard.json` mit `"billing": "once"` markiert.
+2. **weclapp:** Für jede Artikelnummer (`sku`) aus `config/angebotsboard.json` einen Artikel mit gleicher Artikelnummer anlegen – die zehn Produkte, die SLA-Artikel (`SIT-SLA-…`, `SIT-GOV-…`) und `SIT-PROJEKT`. Fehlende Artikel zeigt das Board intern rot an.
 3. **Anmeldung:** jeder Mitarbeiter mit seinem persönlichen weclapp-API-Token (*Mein Profil → API*). Es gelten seine weclapp-Rechte, z. B. sieht nur, wer Rechnungen sehen darf, die Rechnungs-Kacheln.
 
 ## Angebotsboard im Detail
 
-- Preise kommen immer aus weclapp und werden **am Server** berechnet. Der Browser schickt nur Artikel und Mengen.
-- Laufzeiten, Laufzeit-Rabatte, maximaler Rabatt, Gruppierung, Reihenfolge und die Vertragstexte im PDF: `config/angebotsboard.json`.
-- Ablauf beim Unterschreiben:
+Ablauf in sechs Schritten: **Kundendaten** (weclapp-Kunde suchen oder Neukunde, IT-Umgebung) → **Interne Einstufung** (Gold/Silber/Bronze/Registered, nur intern) → **Serviceauswahl** (Zusatz-SLA, IT-Review, Katalog, Projektposition) → **Angebot** (Vorschau, PDF) → **Unterschrift** → **Onboarding** (Checkliste je Auftrag).
+
+- **Katalog, Preise, Staffeln, Leistungsbeschreibungen, SLA-Modell, Checkliste und Vertragstexte** stehen in `config/angebotsboard.json` (übernommen aus SIT_Angebotsboard_V4). Preise werden **am Server** berechnet, der Browser schickt nur Auswahl und Mengen.
+- **Prüfpunkte** (Leistungsüberschneidungen, fehlende Leistungsbeschreibungen, Entwurfs-SLA-Preise, Servicezeiten …) sind nur intern sichtbar. Solange welche offen sind, muss im Schritt „Angebot“ *Intern geprüft* bestätigt werden, sonst ist keine Unterschrift möglich.
+- **Kundenansicht** blendet Cockpit-Navigation, interne Einstufung, Quellen und Prüfpunkte aus – zum Übergeben des Tablets.
+- **Kundenstand speichern / Gespeicherte laden:** Entwürfe liegen am Server (`DATA_DIR/offers/drafts`), für alle Mitarbeiter sichtbar.
+- **Beim Unterschreiben:**
   1. Vorgang + Unterschrift werden **zuerst lokal gesichert** (`DATA_DIR/offers`). Eine Unterschrift geht nie verloren.
-  2. Angebot in weclapp anlegen (Preise fix übernommen, Kommentar mit Unterzeichner/Zeitpunkt).
-  3. PDF mit Unterschrift und Prüfsumme erzeugen, an das Angebot hängen.
-  4. Angebot annehmen → weclapp erzeugt den Auftrag, PDF wird auch dort angehängt (`OFFER_CREATE_SALES_ORDER=0` = nur „angenommen“).
-- Ist weclapp nicht erreichbar, bleibt der Vorgang gespeichert und kann unter *Vertrieb & Finanzen → Am Tablet unterschrieben* erneut gesendet werden.
+  2. Neukunde wird in weclapp angelegt (falls nicht ausgewählt).
+  3. Angebot in weclapp mit fixen Preisen und Leistungsbeschreibung je Position, PDF mit Unterschrift und Prüfsumme angehängt.
+  4. Angebot annehmen → Auftrag, PDF auch dort (`OFFER_CREATE_SALES_ORDER=0` = nur „angenommen“).
+- Scheitert weclapp (z. B. fehlender Artikel), bleibt der Vorgang gespeichert und kann erneut gesendet werden – im Board oder unter *Vertrieb & Finanzen*.
 
 ## Ampel-Regeln (siehe `docs/anforderungen.md`)
 
@@ -85,13 +89,13 @@ server/
   index.js         Express-Server, Login, REST-API
   atera.js         Atera-Client, Ampel-Regeln, Hintergrund-Cache
   sales.js         weclapp: Dashboard-Kennzahlen, Kunden
-  offers.js        Angebotsboard: Katalog, Berechnung, Unterschrift → weclapp
+  offers.js        Angebotsboard: Katalog, Berechnung, Entwürfe, Unterschrift → weclapp
   pdf.js           PDF mit Unterschrift
   weclapp.js       weclapp-Client (aus SIT-Time)
   time-routes.js   SIT-Time-Routen (Timer, Buchung, Arbeitszeit)
   mock/            Atera- und weclapp-Simulation für den Demo-Modus
 config/angebotsboard.json   Feinsteuerung Angebotsboard
-public/            Cockpit-Oberfläche (ohne Build-Schritt)
+public/            Cockpit-Oberfläche (ohne Build-Schritt), board.js/.css = Angebotsboard
 public/zeiten/     SIT-Time-Oberfläche
 docs/ design/      Konzept, Anforderungen, Design-Entwurf
 ```
