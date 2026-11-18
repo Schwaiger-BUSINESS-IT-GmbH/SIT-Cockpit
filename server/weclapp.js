@@ -179,8 +179,20 @@ async function loadSchema(token) {
     if (res.ok) {
       const doc = await res.json();
       const sch = doc.components?.schemas || doc.definitions || {};
+      // weclapp v2 setzt Typen aus Bausteinen zusammen (allOf + $ref) -> geerbte Felder mitlesen
+      const lower = Object.fromEntries(Object.entries(sch).map(([k, v]) => [k.toLowerCase(), v]));
+      const props = (x, seen = new Set()) => {
+        if (!x || typeof x !== 'object') return [];
+        if (x.$ref) {
+          const n = x.$ref.split('/').pop().toLowerCase();
+          if (seen.has(n)) return [];
+          seen.add(n);
+          return props(lower[n], seen);
+        }
+        return [...Object.keys(x.properties || {}), ...['allOf', 'anyOf', 'oneOf'].flatMap((k) => (x[k] || []).flatMap((y) => props(y, seen)))];
+      };
       map = {};
-      for (const [k, v] of Object.entries(sch)) map[k.toLowerCase()] = Object.keys(v.properties || {});
+      for (const k of Object.keys(lower)) map[k] = [...new Set(props(lower[k]))];
     }
   } catch { /* ohne Schema weiter */ }
   schemaCache = { at: Date.now(), map };
@@ -309,7 +321,15 @@ export async function placesOfService(token) {
 }
 
 // ---------- Artikel (Fallback, falls es keine Aufgaben gibt) ----------
+// weclapp v2: bewährtes Verhalten AUSDRÜCKLICH festgelegt statt aus dem Schema abgeleitet.
+// Das Schema listet ticketId/articleId zwar an timeRecord, der Mandant lehnt sie beim
+// Buchen aber ab ("Validation failed"); gebucht wird über die Aufgabe des Tickets.
+// Früher ergab sich dieses Verhalten nur zufällig, weil geerbte Schemafelder (allOf)
+// nicht gelesen wurden. So bleibt es stabil, auch wenn weclapp das Schemaformat ändert.
+const V2_TIME_RECORD = Object.freeze({ taskId: false, ticketId: false, articleId: false });
+
 export async function timeRecordNeedsTask(token) {
+  if (!/\/v1\/?$/.test(config.weclappBaseUrl)) return { ...V2_TIME_RECORD };
   const withTask = await hasField(token, 'timeRecord', 'taskId');
   const withTicket = await hasField(token, 'timeRecord', 'ticketId');
   return { taskId: withTask, ticketId: withTicket, articleId: await hasField(token, 'timeRecord', 'articleId') };
