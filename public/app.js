@@ -227,6 +227,7 @@ async function renderCustomer(id) {
   }
   if (stale(seq)) return;
   const c = d.customer;
+  curDetail = d;
   const w = d.weclapp || {};
   const bad = c.devices.filter((x) => x.status !== 'ok' && !x.stale);
   const good = c.devices.filter((x) => x.status === 'ok' && !x.stale);
@@ -242,10 +243,11 @@ async function renderCustomer(id) {
       <div class="page-actions">
         <span class="stamp">Stand: ${ago(d.updatedAt)}</span>
         <a class="btn ghost" href="${esc(c.url)}" target="_blank" rel="noopener">In Atera öffnen</a>
+        ${d.party ? '<button class="btn ghost" type="button" data-ticket-general>Ticket erstellen</button>' : ''}
         ${d.party ? `<button class="btn primary" id="to-offer" type="button">Angebot erstellen</button>` : ''}
       </div>
     </div>
-    ${c.problems.map((p) => `<div class="banner ${p.status === 'critical' ? 'crit' : 'warn'}"><div><b>${p.kind === 'outage' ? 'Möglicher Strom- oder Internetausfall' : esc(p.text)}</b>${p.kind === 'outage' ? esc(p.text.replace(/^[^:]+:\s*/, '')) + '. Kunden anrufen und Stromversorgung bzw. Internetanschluss prüfen lassen.' : ''}</div></div>`).join('')}
+    ${c.problems.map((p, i) => `<div class="banner ${p.status === 'critical' ? 'crit' : 'warn'}" style="justify-content:space-between;flex-wrap:wrap"><div><b>${p.kind === 'outage' ? 'Möglicher Strom- oder Internetausfall' : esc(p.text)}</b>${p.kind === 'outage' ? esc(p.text.replace(/^[^:]+:\s*/, '')) + '. Kunden anrufen und Stromversorgung bzw. Internetanschluss prüfen lassen.' : ''}</div>${ticketBtn(null, p, i)}</div>`).join('')}
     ${!d.party ? `<div class="banner info"><div><b>Kein weclapp-Kunde zugeordnet</b>Trag in Atera beim Kunden das Feld „weclapp-Kundennummer“ ein, dann erscheinen Tickets, Verträge und Angebote hier.</div></div>` : ''}
     <section class="kpis">
       <div class="kpi"><div class="label">Server online</div><div class="value">${c.servers - c.serversDown}<span class="muted" style="font-size:16px"> / ${c.servers}</span></div><div class="sub">${c.firewalls ? `Firewall: ${c.firewallsDown ? 'nicht erreichbar' : 'erreichbar'}` : 'keine Firewall überwacht'}</div></div>
@@ -266,10 +268,109 @@ async function renderCustomer(id) {
       <div class="card"><div class="card-head"><h2>Offene Angebote</h2></div>${w.quotations?.error ? `<p class="empty">${esc(w.quotations.error)}</p>` : w.quotations?.items?.length ? `<table><tbody>${w.quotations.items.map((q) => `<tr><td class="muted">${esc(q.number)}</td><td>${date(q.date)}</td><td class="num">${eur(q.net)}</td></tr>`).join('')}</tbody></table>` : '<p class="empty">Keine offenen Angebote.</p>'}</div>
     </div>` : ''}
   `;
+  $$('[data-ticket]').forEach((b) => (b.onclick = () => {
+    const [guid, idx] = b.dataset.ticket.split('|');
+    const dev = guid === 'kunde' ? null : c.devices.find((x) => x.guid === guid);
+    const prob = dev ? dev.problems[Number(idx)] : c.problems[Number(idx)];
+    openTicketDialog(d, dev, prob);
+  }));
+  $('[data-ticket-general]')?.addEventListener('click', () => openTicketDialog(d, null, null));
   $('#to-offer')?.addEventListener('click', () => {
     prefillCustomer(d.party);
     location.hash = '#/angebot';
   });
+}
+
+// ---------- Ticket aus einem Problem ----------
+let curDetail = null;
+const problemKey = (dev, p) => `${dev?.guid || 'kunde'}|${p?.alertId || p?.kind || 'allgemein'}`;
+function ticketBtn(dev, p, i) {
+  if (!curDetail?.party) return '';
+  const link = curDetail.ticketLinks?.[problemKey(dev, p)];
+  if (link) return `<span class="chip neutral" title="${esc(link.subject)} – angelegt von ${esc(link.by)} am ${date(link.createdAt)}">Ticket ${esc(link.number)}</span>`;
+  return `<button class="btn small" type="button" data-ticket="${esc(dev?.guid || 'kunde')}|${i}">Ticket erstellen</button>`;
+}
+
+async function openTicketDialog(d, dev, prob) {
+  const c = d.customer;
+  const back = document.createElement('div');
+  back.className = 'modal-back';
+  back.innerHTML = '<div class="modal" role="dialog" aria-modal="true" aria-labelledby="tk-title"><p class="loading">Lade Ticket-Stammdaten aus weclapp …</p></div>';
+  document.body.append(back);
+  const close = () => { back.remove(); document.removeEventListener('keydown', onKey); };
+  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  document.addEventListener('keydown', onKey);
+  back.addEventListener('click', (e) => { if (e.target === back) close(); });
+  let meta, similar;
+  try {
+    [meta, similar] = await Promise.all([
+      api('/atera-tickets/meta'),
+      api(`/atera-tickets/similar?partyId=${encodeURIComponent(d.party.id)}&device=${encodeURIComponent(dev?.name || '')}`).then((r) => r.tickets).catch(() => []),
+    ]);
+  } catch (e) {
+    back.querySelector('.modal').innerHTML = `<div class="banner crit"><div><b>weclapp nicht erreichbar</b>${esc(e.message)}</div></div><button class="btn" type="button" data-close>Schließen</button>`;
+    back.querySelector('[data-close]').onclick = close;
+    return;
+  }
+  const kindLabel = dev ? (dev.kind === 'firewall' ? 'Firewall' : 'Server') : '';
+  const subject = (dev ? `${dev.name}: ${prob?.text || ''}` : prob ? prob.text : '').slice(0, 150);
+  const lines = [
+    `Kunde: ${c.name}`,
+    dev ? `Gerät: ${dev.name} (${kindLabel}${dev.description ? `, ${dev.description}` : ''})` : null,
+    prob ? `Problem: ${prob.text}` : null,
+    prob?.since ? `Seit: ${dateTime(prob.since)}` : null,
+    dev && dev.kind === 'server' ? `Zustand: ${dev.online ? 'online' : `offline seit ${dateTime(dev.lastSeen)}`}` : null,
+    dev?.os ? `Betriebssystem: ${dev.os}` : null,
+    dev?.ip ? `IP-Adresse: ${dev.ip}` : null,
+    dev?.monitoring ? `Überwachung: ${dev.monitoring}` : null,
+    dev?.url ? `Atera: ${dev.url}` : `Atera: ${c.url}`,
+  ].filter(Boolean).join('\n');
+  const prio = prob?.status === 'critical' ? meta.defaults.priorityCritical : meta.defaults.priorityWarning;
+  const opt = (list, sel) => list.map((x) => `<option value="${esc(x.id)}" ${String(x.id) === String(sel) ? 'selected' : ''}>${esc(x.name)}</option>`).join('');
+  back.querySelector('.modal').innerHTML = `
+    <h2 id="tk-title" style="margin-bottom:4px">Ticket erstellen</h2>
+    <p class="muted" style="margin:0 0 14px">${esc(c.name)}${d.party.number ? ` · ${esc(d.party.number)}` : ''} · wird in weclapp angelegt</p>
+    ${similar.length ? `<div class="banner warn"><div><b>Offene Tickets${dev ? ` zu ${esc(dev.name)}` : ''} vorhanden</b>${similar.slice(0, 5).map((t) => `${esc(t.number)} · ${esc(t.subject)}${t.status ? ` (${esc(t.status)})` : ''}`).join('<br>')}<br>Bitte prüfen, ob das Problem dort schon bearbeitet wird.</div></div>` : ''}
+    <form id="tk-form">
+      <div class="field"><label for="tk-subject">Betreff</label><input id="tk-subject" maxlength="150" required value="${esc(subject)}"></div>
+      <div class="field"><label for="tk-desc">Beschreibung</label><textarea id="tk-desc" rows="8">${esc(lines)}</textarea></div>
+      <div class="grid-2" style="gap:0 14px">
+        <div class="field"><label for="tk-prio">Priorität</label><select id="tk-prio">${opt(meta.priorities, prio)}</select></div>
+        <div class="field"><label for="tk-user">Bearbeiter</label><select id="tk-user"><option value="">– niemand –</option>${opt(meta.users, meta.defaults.assignedUserId)}</select></div>
+        <div class="field"><label for="tk-status">Status</label><select id="tk-status">${opt(meta.statuses, meta.defaults.statusId)}</select></div>
+        <div class="field"><label for="tk-channel">Kanal</label><select id="tk-channel">${opt(meta.channels, meta.defaults.channelId)}</select></div>
+      </div>
+      <label class="check"><input type="checkbox" id="tk-notify"><span>Kunden per E-Mail über das neue Ticket informieren (weclapp-Vorlage)</span></label>
+      <p id="tk-error" class="error" role="alert" hidden></p>
+      <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap"><button class="btn ghost" type="button" data-close>Abbrechen</button><button class="btn primary" type="submit" id="tk-submit">Ticket anlegen</button></div>
+    </form>`;
+  back.querySelector('[data-close]').onclick = close;
+  back.querySelector('#tk-subject').focus();
+  back.querySelector('#tk-form').onsubmit = async (e) => {
+    e.preventDefault();
+    const btn = back.querySelector('#tk-submit');
+    const err = back.querySelector('#tk-error');
+    btn.disabled = true; btn.textContent = 'Wird angelegt …'; err.hidden = true;
+    try {
+      const t = await api('/atera-tickets', { method: 'POST', body: {
+        partyId: d.party.id,
+        subject: back.querySelector('#tk-subject').value,
+        description: back.querySelector('#tk-desc').value,
+        priorityId: back.querySelector('#tk-prio').value,
+        assignedUserId: back.querySelector('#tk-user').value,
+        statusId: back.querySelector('#tk-status').value,
+        channelId: back.querySelector('#tk-channel').value,
+        notifyCustomer: back.querySelector('#tk-notify').checked,
+        source: { customerId: c.id, deviceGuid: dev?.guid || null, alertId: prob?.alertId || null, kind: prob?.kind || null },
+      } });
+      close();
+      toast(`Ticket ${t.number} angelegt`);
+      renderCustomer(c.id);
+    } catch (ex) {
+      err.textContent = ex.message; err.hidden = false;
+      btn.disabled = false; btn.textContent = 'Ticket anlegen';
+    }
+  };
 }
 
 const KIND = { server: 'Server', firewall: 'Firewall', workstation: 'Arbeitsplatz', other: 'Gerät' };
@@ -284,7 +385,7 @@ function device(x, open) {
       <span class="d-seen">${seenText(x)}</span>
     </summary>
     <div class="device-body">
-      ${x.problems.length ? `<ul class="problem-list">${x.problems.map((pp) => `<li>${chip(pp.status, { offline: 'Offline', backup: 'Backup', disk: 'Speicher', alert: 'Alert' }[pp.kind] || 'Alert')} <span>${esc(pp.text)}</span>${pp.since ? `<span class="muted small">seit ${dateTime(pp.since)}</span>` : ''}</li>`).join('')}</ul>` : ''}
+      ${x.problems.length ? `<ul class="problem-list">${x.problems.map((pp, i) => `<li>${chip(pp.status, { offline: 'Offline', backup: 'Backup', disk: 'Speicher', alert: 'Alert' }[pp.kind] || 'Alert')} <span>${esc(pp.text)}</span>${pp.since ? `<span class="muted small">seit ${dateTime(pp.since)}</span>` : ''}${ticketBtn(x, pp, i)}</li>`).join('')}</ul>` : ''}
       ${x.kind === 'firewall' ? `<dl class="facts">
         <div><dt>Überwachung</dt><dd>${esc(x.monitoring || '–')}</dd></div>
         <div><dt>Status</dt><dd>${x.online === null ? 'nur über Alerts (kein Online-Status)' : x.online ? 'erreichbar' : 'nicht erreichbar'}</dd></div>

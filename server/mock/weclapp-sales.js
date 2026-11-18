@@ -86,6 +86,18 @@ export function registerSales(r, { applyFilters, parties, tickets, documents, ar
   };
 
   r.get('/articleCategory', list(categories));
+  // Ticket-Stammdaten und Anlegen (Pflichtfelder wie in weclapp)
+  r.get('/ticketPriority', list([{ id: 'p1', name: 'Niedrig', positionNumber: 1 }, { id: 'p2', name: 'Normal', positionNumber: 2 }, { id: 'p3', name: 'Hoch', positionNumber: 3 }, { id: 'p4', name: 'Kritisch', positionNumber: 4 }]));
+  r.get('/ticketChannel', list([{ id: 'c1', name: 'Telefon', positionNumber: 1 }, { id: 'c2', name: 'E-Mail', positionNumber: 2 }, { id: 'c3', name: 'Monitoring', positionNumber: 3 }]));
+  r.post('/ticket', (req, res) => {
+    const b = req.body || {};
+    const missing = ['partyId', 'subject', 'ticketStatusId', 'ticketPriorityId', 'ticketChannelId'].filter((k) => !b[k]);
+    if (missing.length) return res.status(400).json({ title: 'validation failed', messages: missing.map((k) => ({ location: k, message: 'required' })) });
+    const t = { id: String(9000 + tickets.length), ticketNumber: `T-${10231 + tickets.length}`, ...b, assignedUserId: b.assignedUserId || null, lastModifiedDate: Date.now() };
+    tickets.push(t);
+    console.log('[mock] Ticket angelegt:', t.ticketNumber, t.subject, 'Prio', t.ticketPriorityId, 'Mail aus:', t.disableEmailTemplates);
+    res.status(201).json(t);
+  });
   r.get('/article/id/:id', (req, res) => {
     const a = articles.find((x) => x.id === req.params.id);
     a ? res.json(a) : res.status(404).json({ title: 'Not Found' });

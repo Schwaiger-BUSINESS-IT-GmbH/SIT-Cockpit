@@ -42,6 +42,15 @@ $env:WECLAPP_TOKEN="<dein-token>"; npm run check
 
 Prüft Anmeldung, API-Schema des Mandanten (alle Felder, Endpunkte und Statuswerte, die das Cockpit nutzt), deine Leserechte je Cockpit-Bereich, welcher Ticketstatus als „geschlossen“ gilt, ob alle Artikel des Angebotsboards in weclapp existieren, Atera-Zugriff, Gerätetypen, `LastSeen`, offene Alerts sowie die Zuordnung Atera-Kunde → weclapp-Kunde. Ergebnis mit ✔ / ⚠ / ✖; bei Fehlern Exit-Code 1.
 
+## Ticket aus einem Problem
+
+In der Kundenansicht hat jedes Problem (Server/Firewall offline, Alert, Backup, Laufwerk, möglicher Ausfall) einen Knopf **„Ticket erstellen“**, dazu einer im Kundenkopf. Der Dialog ist vorausgefüllt: Betreff „Gerät: Problem“, Beschreibung mit Gerätedaten und Atera-Link, Priorität nach Ampel (kritisch → höchste Priorität), Bearbeiter = angemeldeter Benutzer, erster offener Status, Kanal „Monitoring“ (falls vorhanden). Alles änderbar.
+
+- Die **automatische Kunden-E-Mail** von weclapp ist standardmäßig aus (`disableEmailTemplates`), per Häkchen zuschaltbar.
+- **Doppelte Tickets:** Der Dialog zeigt offene Tickets des Kunden zum Gerät an. Angelegte Tickets werden am Problem als „Ticket T-…“ angezeigt (gespeichert in `DATA_DIR/atera-tickets.json`).
+- Voraussetzung: Der Atera-Kunde ist einem weclapp-Kunden zugeordnet.
+- Vorbelegung fest einstellen (optional): `TICKET_STATUS_ID`, `TICKET_CHANNEL_ID`, `TICKET_PRIORITY_CRITICAL_ID`, `TICKET_PRIORITY_WARNING_ID`.
+
 ## Angebotsboard im Detail
 
 Ablauf in sechs Schritten: **Kundendaten** (weclapp-Kunde suchen oder Neukunde, IT-Umgebung) → **Interne Einstufung** (Gold/Silber/Bronze/Registered, nur intern) → **Serviceauswahl** (Zusatz-SLA, IT-Review, Katalog, Projektposition) → **Angebot** (Vorschau, PDF) → **Unterschrift** → **Onboarding** (Checkliste je Auftrag).

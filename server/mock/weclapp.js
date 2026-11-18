@@ -26,7 +26,7 @@ const parties = [
   contactName: contact,
 }));
 const statuses = [
-  { id: '1', name: 'Offen' }, { id: '2', name: 'In Bearbeitung' }, { id: '3', name: 'Geschlossen' },
+  { id: '1', name: 'Offen', positionNumber: 1 }, { id: '2', name: 'In Bearbeitung', positionNumber: 2 }, { id: '3', name: 'Geschlossen', positionNumber: 3 },
 ];
 const now = Date.now();
 const tickets = [

@@ -6,6 +6,7 @@ import * as wc from './weclapp.js';
 import * as atera from './atera.js';
 import * as sales from './sales.js';
 import * as offers from './offers.js';
+import * as tickets from './tickets.js';
 import { registerTimeRoutes } from './time-routes.js';
 import { getStored, saveStored, removeStored } from './tokens.js';
 import { setSession, clearSession, requireSession, entraPrincipal, requireEntraIfConfigured } from './session.js';
@@ -109,8 +110,13 @@ api.get('/atera/customers/:id', h(async (req, res) => {
   const number = await atera.customerNumber(customer.id);
   const party = await sales.findParty(req.session.token, { number, name: customer.name }).catch(() => null);
   const weclapp = party ? await sales.customerFacts(req.session.token, party.id).catch((e) => ({ error: e.message })) : null;
-  res.json({ updatedAt: c.at, customer, party, weclapp });
+  res.json({ updatedAt: c.at, customer, party, weclapp, ticketLinks: tickets.ticketLinks(customer.id) });
 }));
+
+// ---------- Ticket aus einem Atera-Problem ----------
+api.get('/atera-tickets/meta', h(async (req, res) => res.json(await tickets.ticketMeta(req.session.token, req.session.userId))));
+api.get('/atera-tickets/similar', h(async (req, res) => res.json({ tickets: await tickets.similarTickets(req.session.token, req.query.partyId, req.query.device) })));
+api.post('/atera-tickets', h(async (req, res) => res.json(await tickets.createTicket(req.session.token, req.body || {}, req.session))));
 
 // ---------- weclapp-Dashboard ----------
 api.get('/dashboard', h(async (req, res) => {
