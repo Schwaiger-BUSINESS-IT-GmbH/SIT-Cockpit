@@ -44,11 +44,27 @@ async function wget(path, query = {}) {
 async function aget(path, query = {}) {
   const url = new URL(AT + path);
   for (const [k, v] of Object.entries(query)) url.searchParams.set(k, String(v));
-  const res = await fetch(url, { headers: { 'X-API-KEY': AKEY, Accept: 'application/json' }, signal: AbortSignal.timeout(30000) });
+  const auth = /^eyJ[\w-]*\.[\w-]+\.[\w-]+$/.test(AKEY) ? { Authorization: `Bearer ${AKEY}` } : { 'X-API-KEY': AKEY };
+  const res = await fetch(url, { headers: { ...auth, Accept: 'application/json' }, signal: AbortSignal.timeout(30000) });
   if (!res.ok) throw Object.assign(new Error(`HTTP ${res.status}`), { status: res.status });
   return res.json();
 }
 const why = (e) => (e.status === 401 ? 'Token/Schlüssel abgelehnt (401)' : e.status === 403 ? 'keine Berechtigung (403)' : e.message);
+
+// Felder eines Schema-Typs inkl. geerbter (weclapp nutzt allOf + $ref)
+export function schemaProps(schema, schemas, seen = new Set()) {
+  if (!schema || typeof schema !== 'object') return [];
+  if (schema.$ref) {
+    const name = schema.$ref.split('/').pop().toLowerCase();
+    if (seen.has(name)) return [];
+    seen.add(name);
+    return schemaProps(schemas[name], schemas, seen);
+  }
+  return [
+    ...Object.keys(schema.properties || {}),
+    ...['allOf', 'anyOf', 'oneOf'].flatMap((k) => (schema[k] || []).flatMap((x) => schemaProps(x, schemas, seen))),
+  ];
+}
 
 // ---------- weclapp ----------
 async function checkWeclapp() {
@@ -92,8 +108,8 @@ async function checkWeclapp() {
     };
     for (const [entity, fields] of Object.entries(need)) {
       const s = schemas[entity.toLowerCase()];
-      if (!s) { warn(`Typ „${entity}“ nicht im Schema gefunden`); continue; }
-      const props = Object.keys(s.properties || {});
+      if (!s) { warn(`Typ „${entity}“ nicht im Schema gefunden (Modul nicht lizenziert oder keine Berechtigung?)`); continue; }
+      const props = schemaProps(s, schemas);
       const missing = fields.filter((f) => !props.includes(f));
       if (missing.length) fail(`${entity}: Felder fehlen: ${missing.join(', ')}`);
       else ok(`${entity}: alle ${fields.length} Felder vorhanden`);
@@ -174,6 +190,21 @@ async function checkAtera() {
   head('Atera');
   if (!AKEY) return fail('ATERA_API_KEY fehlt in der .env');
   info(`API: ${AT}`);
+  if (/^eyJ/.test(AKEY)) {
+    try {
+      const p = JSON.parse(Buffer.from(AKEY.split('.')[1], 'base64url'));
+      const perms = String(p.apiPermissions || '').split(',').map((x) => x.split(':')[0]).filter(Boolean);
+      const need = ['Customers', 'Agents', 'Alerts', 'CustomValues'];
+      const missing = need.filter((n) => !perms.includes(n));
+      missing.length ? fail(`Schlüssel ohne Rechte für: ${missing.join(', ')}`) : ok(`Neuer Schlüssel (Bearer) mit Rechten für ${need.join(', ')}`);
+      if (p.exp) {
+        const days = Math.round((p.exp * 1000 - Date.now()) / 864e5);
+        (days > 30 ? ok : warn)(`Schlüssel gültig bis ${new Date(p.exp * 1000).toLocaleDateString('de-AT')} (${days} Tage)`);
+      }
+    } catch { warn('Schlüssel-Inhalt nicht lesbar'); }
+  } else {
+    warn('Alter Atera-Schlüssel (X-API-KEY) – Atera stellt auf neue Schlüssel um. Neuen Schlüssel erzeugen.');
+  }
   let customers;
   try {
     const d = await aget('/customers', { page: 1, itemsInPage: 50 });

@@ -117,7 +117,7 @@ const page = (rows, q) => {
 
 export function ateraMock() {
   const r = express.Router();
-  r.use((req, res, next) => (req.get('X-API-KEY') === 'demo-atera-key' ? next() : res.status(401).json({ Message: 'Unauthorized' })));
+  r.use((req, res, next) => (req.get('X-API-KEY') === 'demo-atera-key' || req.get('Authorization') === 'Bearer demo-atera-key' ? next() : res.status(401).json({ Message: 'Unauthorized' })));
   r.get('/customers', (req, res) => res.json(page(customers, req.query)));
   r.get('/agents', (req, res) => res.json(page(agents, req.query)));
   r.get('/alerts', (req, res) => res.json(page(alerts, req.query)));

@@ -8,11 +8,17 @@ export class AteraError extends Error {
   constructor(status, message) { super(message); this.status = status; }
 }
 
+// Neue Atera-Schlüssel (JWT, seit der Umstellung 12/2026) gehen als Bearer-Token,
+// alte Schlüssel weiterhin als X-API-KEY.
+export function ateraAuthHeaders(key) {
+  return /^eyJ[\w-]*\.[\w-]+\.[\w-]+$/.test(key) ? { Authorization: `Bearer ${key}` } : { 'X-API-KEY': key };
+}
+
 async function request(path, query = {}) {
   const url = new URL(config.ateraBaseUrl.replace(/\/$/, '') + path);
   for (const [k, v] of Object.entries(query)) url.searchParams.set(k, String(v));
   const res = await fetch(url, {
-    headers: { 'X-API-KEY': config.ateraApiKey, Accept: 'application/json' },
+    headers: { ...ateraAuthHeaders(config.ateraApiKey), Accept: 'application/json' },
     signal: AbortSignal.timeout(30000),
   });
   if (!res.ok) {
