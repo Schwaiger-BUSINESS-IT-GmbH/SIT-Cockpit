@@ -128,6 +128,10 @@ api.post('/offer/preview', h(async (req, res) => {
   res.send(pdf);
 }));
 api.post('/offer/sign', h(async (req, res) => res.json(await offers.signAndCreate(req.session.token, req.body || {}, req.session))));
+api.get('/offer/articles', h(async (req, res) => res.json({ positions: await offers.articleMapping(req.session.token) })));
+api.get('/offer/articles/search', h(async (req, res) => res.json({ articles: await offers.searchArticles(req.session.token, req.query.q) })));
+api.post('/offer/articles/suggest', h(async (req, res) => res.json({ suggestions: await offers.suggestArticles(req.session.token) })));
+api.put('/offer/articles/:sku', h(async (req, res) => res.json({ positions: await offers.setArticleMapping(req.session.token, req.params.sku, req.body?.articleId || null, req.session) })));
 api.get('/offer/drafts', h(async (req, res) => res.json({ drafts: offers.listDrafts() })));
 api.post('/offer/drafts', h(async (req, res) => res.json(offers.saveDraft(req.body || {}, req.session))));
 api.get('/offer/drafts/:id', h(async (req, res) => res.json(offers.getDraft(req.params.id))));

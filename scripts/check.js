@@ -165,22 +165,40 @@ async function checkWeclapp() {
     closed.length ? ok(`Ticketstatus „geschlossen“ erkannt: ${closed.join(', ')}`) : warn(`Kein Ticketstatus als geschlossen erkannt – offene Tickets werden zu hoch gezählt. Vorhanden: ${st.map((s) => s.name).join(', ')}`);
   } catch (e) { warn(`Ticketstatus nicht lesbar: ${why(e)}`); }
 
-  head('weclapp · Artikel des Angebotsboards');
+  head('weclapp · Artikel des Angebotsboards (Board-Position → weclapp-Artikel)');
   const skus = [...new Set([
     ...board.products.map((p) => p.sku),
     ...Object.values(board.sla.skuBase), ...Object.values(board.sla.skuUser),
     board.sla.site.sku, board.sla.setup.sku, ...Object.values(board.sla.reviews).map((r) => r.sku), board.projectSku,
   ])];
   try {
-    const found = new Map();
-    for (let i = 0; i < skus.length; i += 50) {
-      const rows = await wget('/article', { 'articleNumber-in': JSON.stringify(skus.slice(i, i + 50)), properties: 'id,articleNumber,name,active', pageSize: 100 });
-      for (const a of rows) found.set(a.articleNumber, a);
+    // Zuordnung aus dem Board (liegt im Datenordner – auf Azure /home/data, lokal ./data)
+    const dataDir = env.DATA_DIR || new URL('../data/', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
+    let mapping = {};
+    try { mapping = JSON.parse(fs.readFileSync(`${dataDir.replace(/\/$/, '')}/article-map.json`, 'utf8')); } catch { /* noch keine Zuordnung */ }
+    const mappedIds = [...new Set(skus.filter((k) => mapping[k]?.id).map((k) => mapping[k].id))];
+    const byId = new Map();
+    for (let i = 0; i < mappedIds.length; i += 50) {
+      const rows = await wget('/article', { 'id-in': JSON.stringify(mappedIds.slice(i, i + 50)), properties: 'id,articleNumber,name,active', pageSize: 100 });
+      for (const a of rows) byId.set(String(a.id), a);
     }
-    const missing = skus.filter((s) => !found.has(s));
-    const inactive = [...found.values()].filter((a) => a.active === false).map((a) => a.articleNumber);
-    if (missing.length) fail(`${missing.length} von ${skus.length} Artikeln fehlen in weclapp: ${missing.join(', ')}`);
-    else ok(`Alle ${skus.length} Artikel vorhanden`);
+    const rest = skus.filter((k) => !mapping[k]?.id);
+    const byNumber = new Map();
+    for (let i = 0; i < rest.length; i += 50) {
+      const rows = await wget('/article', { 'articleNumber-in': JSON.stringify(rest.slice(i, i + 50)), properties: 'id,articleNumber,name,active', pageSize: 100 });
+      for (const a of rows) byNumber.set(a.articleNumber, a);
+    }
+    const mapped = skus.filter((k) => mapping[k]?.id && byId.has(mapping[k].id));
+    const broken = skus.filter((k) => mapping[k]?.id && !byId.has(mapping[k].id));
+    const direct = rest.filter((k) => byNumber.has(k));
+    const missing = rest.filter((k) => !byNumber.has(k));
+    const inactive = [...byId.values(), ...byNumber.values()].filter((a) => a.active === false).map((a) => a.articleNumber);
+    info(`Zuordnung: ${Object.keys(mapping).length ? `${dataDir}article-map.json` : 'noch keine (im Board unter „Artikelzuordnung“ anlegen)'}`);
+    if (mapped.length) ok(`${mapped.length} Positionen einem weclapp-Artikel zugeordnet`);
+    if (direct.length) ok(`${direct.length} Positionen über gleiche Artikelnummer gefunden`);
+    if (broken.length) fail(`Zugeordneter Artikel existiert nicht mehr: ${broken.join(', ')}`);
+    if (missing.length) warn(`${missing.length} von ${skus.length} Positionen ohne weclapp-Artikel: ${missing.join(', ')} – Angebote mit diesen Positionen können nicht angelegt werden`);
+    if (!missing.length && !broken.length) ok(`Alle ${skus.length} Positionen haben einen weclapp-Artikel`);
     if (inactive.length) warn(`Inaktive Artikel: ${inactive.join(', ')}`);
   } catch (e) { fail(`Artikelabgleich nicht möglich: ${why(e)}`); }
 }

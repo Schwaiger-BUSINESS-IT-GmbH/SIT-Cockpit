@@ -24,36 +24,135 @@ export function boardSettings() {
   return JSON.parse(fs.readFileSync(new URL('../config/angebotsboard.json', import.meta.url), 'utf8'));
 }
 
-// ---------- Katalog ----------
-let skuCache = { at: 0, map: null };
-async function articleIds(token, skus) {
-  if (skuCache.map && Date.now() - skuCache.at < 300e3 && skus.every((s) => s in skuCache.map)) return skuCache.map;
+// ---------- Artikelzuordnung Board-Position -> weclapp-Artikel ----------
+// Die Artikelnummern in config/angebotsboard.json sind Board-interne Kennungen.
+// Welcher echte weclapp-Artikel dahintersteht, wird im Board unter
+// "Artikelzuordnung" festgelegt und in DATA_DIR/article-map.json gespeichert.
+// Ohne Zuordnung wird ein weclapp-Artikel mit gleicher Artikelnummer gesucht.
+const mapFile = path.join(config.dataDir, 'article-map.json');
+const loadMap = () => { try { return JSON.parse(fs.readFileSync(mapFile, 'utf8')); } catch { return {}; } };
+const saveMap = (m) => fs.writeFileSync(mapFile, JSON.stringify(m, null, 2));
+
+/** Alle Board-Positionen, die einen weclapp-Artikel brauchen */
+export function positions(s = boardSettings()) {
+  const out = s.products.map((p) => ({ sku: p.sku, label: p.name, group: p.group, price: p.price, unit: p.unit }));
+  for (const k of Object.keys(s.sla.rates)) {
+    out.push({ sku: s.sla.skuBase[k], label: `Service-Level ${s.sla.labels[k]} – Grundgebühr`, group: 'Zusatz-SLA', price: s.sla.rates[k].base, unit: 'Monat' });
+    out.push({ sku: s.sla.skuUser[k], label: `Service-Level ${s.sla.labels[k]} – Benutzer`, group: 'Zusatz-SLA', price: s.sla.rates[k].user, unit: 'User' });
+  }
+  out.push({ sku: s.sla.site.sku, label: 'Zusätzlicher Standort (SLA)', group: 'Zusatz-SLA', price: s.sla.site.price, unit: 'Standort' });
+  out.push({ sku: s.sla.setup.sku, label: 'SLA-Einrichtung und Dokumentation', group: 'Zusatz-SLA', price: s.sla.setup.price, unit: 'einmalig' });
+  for (const r of Object.values(s.sla.reviews)) out.push({ sku: r.sku, label: r.name, group: 'Zusatz-SLA', price: r.price, unit: 'Monat' });
+  out.push({ sku: s.projectSku, label: 'Projektposition (Name und Preis frei)', group: 'Sonstiges', price: null, unit: 'einmalig' });
+  return out;
+}
+
+function pickPrice(article, now = Date.now()) {
+  const prices = (article.articlePrices || []).filter((p) => !p.customerId && (!p.salesChannel || p.salesChannel === 'NET1')
+    && (!p.startDate || Number(p.startDate) <= now) && (!p.endDate || Number(p.endDate) >= now));
+  prices.sort((a, b) => Number(a.priceScaleValue || 0) - Number(b.priceScaleValue || 0));
+  return prices.length ? Number(prices[0].price) : null;
+}
+const ARTICLE_PROPS = 'id,articleNumber,name,active,articlePrices';
+const shortArticle = (a) => ({ id: String(a.id), number: a.articleNumber, name: a.name, active: a.active !== false, price: pickPrice(a) });
+
+let resolveCache = { at: 0, map: null };
+/** sku -> { id, number } | null (Zuordnung zuerst, sonst gleiche Artikelnummer) */
+async function resolveArticles(token, skus) {
+  if (resolveCache.map && Date.now() - resolveCache.at < 300e3 && skus.every((s) => s in resolveCache.map)) return resolveCache.map;
+  const mapping = loadMap();
   const map = {};
-  for (let i = 0; i < skus.length; i += 50) {
-    const rows = await get(token, '/article', { 'articleNumber-in': JSON.stringify(skus.slice(i, i + 50)), properties: 'id,articleNumber', pageSize: 100 });
-    for (const a of rows) map[a.articleNumber] = String(a.id);
+  for (const s of skus) if (mapping[s]?.id) map[s] = { id: mapping[s].id, number: mapping[s].number };
+  const rest = skus.filter((s) => !map[s]);
+  for (let i = 0; i < rest.length; i += 50) {
+    const rows = await get(token, '/article', { 'articleNumber-in': JSON.stringify(rest.slice(i, i + 50)), properties: 'id,articleNumber', pageSize: 100 });
+    for (const a of rows) map[a.articleNumber] = { id: String(a.id), number: a.articleNumber };
   }
   for (const s of skus) if (!(s in map)) map[s] = null;
-  skuCache = { at: Date.now(), map };
+  resolveCache = { at: Date.now(), map };
   return map;
 }
 
-function allSkus(s) {
-  return [
-    ...s.products.map((p) => p.sku),
-    ...Object.values(s.sla.skuBase), ...Object.values(s.sla.skuUser),
-    s.sla.site.sku, s.sla.setup.sku, ...Object.values(s.sla.reviews).map((r) => r.sku), s.projectSku,
-  ];
+/** Übersicht für die Zuordnungsseite inkl. Preisabgleich */
+export async function articleMapping(token) {
+  const pos = positions();
+  const resolved = await resolveArticles(token, pos.map((p) => p.sku));
+  const mapping = loadMap();
+  const ids = [...new Set(Object.values(resolved).filter(Boolean).map((r) => r.id))];
+  const details = {};
+  for (let i = 0; i < ids.length; i += 50) {
+    const rows = await get(token, '/article', { 'id-in': JSON.stringify(ids.slice(i, i + 50)), properties: ARTICLE_PROPS, pageSize: 100 });
+    for (const a of rows) details[String(a.id)] = shortArticle(a);
+  }
+  return pos.map((p) => {
+    const r = resolved[p.sku];
+    const art = r ? details[r.id] || { id: r.id, number: r.number, name: '(nicht mehr lesbar)', active: false, price: null } : null;
+    const deviation = art && p.price != null && art.price != null && Math.abs(art.price - p.price) > 0.004 ? Math.round((art.price - p.price) * 100) / 100 : null;
+    return { ...p, status: !art ? 'missing' : mapping[p.sku] ? 'mapped' : 'direct', article: art, deviation, mappedBy: mapping[p.sku]?.by || null, mappedAt: mapping[p.sku]?.at || null };
+  });
 }
 
+export async function searchArticles(token, q) {
+  const term = str(q, 100);
+  if (term.length < 2) return [];
+  const base = { properties: ARTICLE_PROPS, pageSize: 15, 'active-eq': true };
+  const [byName, byNumber] = await Promise.all([
+    get(token, '/article', { ...base, 'name-ilike': `%${term}%` }).catch(() => []),
+    get(token, '/article', { ...base, 'articleNumber-ilike': `%${term}%` }).catch(() => []),
+  ]);
+  const seen = new Set();
+  return [...byNumber, ...byName].filter((a) => (seen.has(a.id) ? false : seen.add(a.id))).slice(0, 20).map(shortArticle);
+}
+
+const STOP = new Set(['sit', 'und', 'der', 'die', 'das', 'mit', 'für', 'edition', 'service', 'level']);
+const words = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9äöüß]+/g, ' ').split(' ').filter((w) => w.length >= 3 && !STOP.has(w));
+
+/** Vorschläge für noch nicht zugeordnete Positionen (Namensähnlichkeit) */
+export async function suggestArticles(token) {
+  const list = await articleMapping(token);
+  const out = {};
+  for (const p of list.filter((x) => x.status === 'missing')) {
+    const w = words(p.label);
+    if (!w.length) continue;
+    // mit den zwei längsten Wörtern suchen, Treffer nach Wortüberschneidung bewerten
+    const keys = [...w].sort((a, b) => b.length - a.length).slice(0, 2);
+    const cands = [];
+    for (const key of keys) cands.push(...await get(token, '/article', { properties: ARTICLE_PROPS, pageSize: 30, 'active-eq': true, 'name-ilike': `%${key}%` }).catch(() => []));
+    let best = null;
+    for (const a of cands) {
+      const aw = new Set(words(a.name));
+      const hit = w.filter((x) => aw.has(x)).length;
+      const score = hit / Math.max(w.length, aw.size);
+      if (!best || score > best.score) best = { score, article: shortArticle(a) };
+    }
+    if (best && best.score >= 0.5) out[p.sku] = { ...best.article, score: Math.round(best.score * 100) };
+  }
+  return out;
+}
+
+export async function setArticleMapping(token, sku, articleId, session) {
+  if (!positions().some((p) => p.sku === sku)) throw bad('Unbekannte Board-Position', 404);
+  const m = loadMap();
+  if (!articleId) delete m[sku];
+  else {
+    const a = unwrap(await request(token, 'GET', `/article/id/${encodeURIComponent(articleId)}`, { query: { properties: 'id,articleNumber,name' } }));
+    if (!a?.id) throw bad('Artikel nicht gefunden', 404);
+    m[sku] = { id: String(a.id), number: a.articleNumber, name: a.name, by: session.name, at: Date.now() };
+  }
+  saveMap(m);
+  resolveCache = { at: 0, map: null };
+  return articleMapping(token);
+}
+
+// ---------- Katalog ----------
 /** Alles, was das Board zum Anzeigen braucht, plus Abgleich mit weclapp */
 export async function catalog(token) {
   const s = boardSettings();
   let missing = [];
   let weclappError = null;
   try {
-    const map = await articleIds(token, allSkus(s));
-    missing = Object.entries(map).filter(([, id]) => !id).map(([sku]) => sku);
+    const map = await resolveArticles(token, positions(s).map((p) => p.sku));
+    missing = Object.entries(map).filter(([, v]) => !v).map(([sku]) => sku);
   } catch (e) {
     weclappError = e.message;
   }
@@ -236,7 +335,6 @@ export async function signAndCreate(token, input, session) {
 
 async function pushToWeclapp(token, rec) {
   rec.warningsWeclapp = [];
-  const s = boardSettings();
   // 1) Kunde: vorhandenen nutzen oder neu anlegen
   if (!rec.customer.id) {
     try {
@@ -255,9 +353,10 @@ async function pushToWeclapp(token, rec) {
   if (rec.customer.id) {
     try {
       const lines = [...rec.monthly, ...rec.once];
-      const ids = await articleIds(token, allSkus(s).concat(lines.map((l) => l.sku)));
+      const ids = await resolveArticles(token, [...new Set(lines.map((l) => l.sku))]);
       const missing = [...new Set(lines.filter((l) => !ids[l.sku]).map((l) => l.sku))];
-      if (missing.length) throw new Error(`Artikel fehlen in weclapp: ${missing.join(', ')}`);
+      if (missing.length) throw new Error(`Keinem weclapp-Artikel zugeordnet: ${missing.join(', ')} (Angebotsboard → Artikelzuordnung)`);
+      for (const l of lines) l.articleNumber = ids[l.sku].number; // echte Nummer fürs PDF
       const toHtml = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/\n/g, '<br>');
       const q = unwrap(await request(token, 'POST', '/quotation', {
         body: {
@@ -267,7 +366,7 @@ async function pushToWeclapp(token, rec) {
           commission: `Angebotsboard ${rec.id}`,
           recordComment: `Vor Ort unterschrieben von ${rec.signer.name}${rec.signer.role ? ` (${rec.signer.role})` : ''} am ${new Date(rec.signedAt).toLocaleString('de-AT', { timeZone: 'Europe/Vienna' })} – erfasst von ${rec.seller.name} über das SIT-Cockpit (${rec.id}).${rec.customer.contact ? ` Ansprechpartner: ${rec.customer.contact}.` : ''}${rec.notes ? ` Anmerkung: ${rec.notes}` : ''}`,
           quotationItems: lines.map((l, i) => ({
-            articleId: ids[l.sku],
+            articleId: ids[l.sku].id,
             quantity: String(l.qty),
             unitPrice: String(l.price),
             manualUnitPrice: true,
@@ -319,6 +418,6 @@ async function pushToWeclapp(token, rec) {
 export async function retry(token, id) {
   const rec = load(id);
   if (rec.weclapp?.quotationId) throw bad('Vorgang ist bereits in weclapp angelegt', 409);
-  skuCache = { at: 0, map: null }; // evtl. inzwischen angelegte Artikel finden
+  resolveCache = { at: 0, map: null }; // evtl. inzwischen zugeordnete Artikel finden
   return pushToWeclapp(token, rec);
 }

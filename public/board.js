@@ -12,7 +12,8 @@ let cat = null; // Katalog vom Server
 let root; // Container
 let step = 0;
 let kv = false; // Kundenansicht
-let view = 'board'; // board | drafts
+let view = 'board'; // board | drafts | articles
+let catStale = false;
 let st = null; // Zustand des Angebots
 let result = null; // unterschriebener Vorgang
 let serverWarnings = [];
@@ -152,7 +153,7 @@ function productCard(p) {
 function productsStep() {
   const missing = cat.missingInWeclapp || [];
   return `<span class="eyebrow">03 · Serviceauswahl</span><h2>Erst wofür. Dann womit.</h2><p class="lead">Wähle die benötigten Managed Services. Staffelpreise werden automatisch berücksichtigt. Alle Beträge netto und monatlich, sofern nicht anders gekennzeichnet.</p>
-  ${missing.length ? `<div class="hint critical internal-only"><strong>${missing.length} Artikelnummer(n) fehlen in weclapp:</strong> ${esc(missing.join(', '))}. Ohne diese Artikel kann das Angebot nach der Unterschrift nicht angelegt werden (der Vorgang bleibt gespeichert und kann später erneut gesendet werden).</div>` : ''}
+  ${missing.length ? `<div class="hint critical internal-only" style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:center"><span><strong>${missing.length} Board-Position(en) ohne weclapp-Artikel.</strong> Angebote mit diesen Positionen können nach der Unterschrift nicht angelegt werden (der Vorgang bleibt gespeichert).</span><button class="btn btn-outline btn-small" data-action="articles">Artikel zuordnen</button></div>` : ''}
   ${cat.weclappError ? `<div class="hint warning internal-only">Artikelabgleich mit weclapp nicht möglich: ${esc(cat.weclappError)}</div>` : ''}
   <section class="section"><h3>Service-Level – bei Bedarf zusätzlich</h3><div class="plans">${['standard', 'priority', 'premium'].map(planCard).join('')}</div>
   <label class="checkline"><input type="radio" name="sla" value="none" data-path="sla" ${st.sla === 'none' ? 'checked' : ''}><span><strong>Kein zusätzliches SLA</strong><small>Es gelten ausschließlich bereits wirksam vereinbarte produktspezifische Bedingungen oder individuelle Vereinbarungen.</small></span></label>
@@ -245,9 +246,9 @@ function render() {
   const t = totals();
   document.body.classList.toggle('kv', kv);
   const visible = STEPS.map((l, i) => [l, i]).filter(([, i]) => !(kv && i === 1));
-  const main = view === 'drafts' ? '<p class="subtle">Lade …</p>' : [customerStep, internalStep, productsStep, quoteStep, signStep, onboardStep][step]();
+  const main = view === 'drafts' ? '<p class="subtle">Lade …</p>' : view === 'articles' ? articlesView() : [customerStep, internalStep, productsStep, quoteStep, signStep, onboardStep][step]();
   root.innerHTML = `<div class="ob">
-  <div class="top"><div class="top-inner"><div class="brandrow"><img src="/img/logo-dark-bg.png" alt="${esc(cat.company.name)}"><div class="tools"><span class="pill dark">${kv ? 'KUNDENANSICHT' : 'INTERNE ANWENDUNG'}</span><button class="btn btn-outline btn-small" data-action="mode">${kv ? 'Kundenansicht beenden' : 'Zur Kundenansicht'}</button><span class="internal-only" style="display:contents"><button class="btn btn-outline btn-small" data-action="save">Kundenstand speichern</button><button class="btn btn-outline btn-small" data-action="drafts">Gespeicherte laden</button><button class="btn btn-outline btn-small" data-action="new">Neu</button></span></div></div>
+  <div class="top"><div class="top-inner"><div class="brandrow"><img src="/img/logo-dark-bg.png" alt="${esc(cat.company.name)}"><div class="tools"><span class="pill dark">${kv ? 'KUNDENANSICHT' : 'INTERNE ANWENDUNG'}</span><button class="btn btn-outline btn-small" data-action="mode">${kv ? 'Kundenansicht beenden' : 'Zur Kundenansicht'}</button><span class="internal-only" style="display:contents"><button class="btn btn-outline btn-small" data-action="save">Kundenstand speichern</button><button class="btn btn-outline btn-small" data-action="drafts">Gespeicherte laden</button><button class="btn btn-outline btn-small" data-action="articles">Artikelzuordnung</button><button class="btn btn-outline btn-small" data-action="new">Neu</button></span></div></div>
   <div class="hero"><div><div class="eyebrow">${esc(cat.company.name.toUpperCase())} · KUNDEN-ONBOARDING</div><h1>Ihre IT. <span>Unser Plan.</span></h1><p>Vom ersten Gespräch bis zum kalkulierten Managed-Service-Angebot. Klar, nachvollziehbar und auf Ihren Betrieb abgestimmt.</p></div><div class="hero-note"><b>Erst wofür. Dann womit.</b>Beratung · Umsetzung · Betreuung</div></div></div></div>
   <div class="metricbar"><div class="metric"><span>Kunde</span><b style="font-size:17px" data-live="company">${esc(st.customer.company || 'Neukunde')}</b><small data-live="userslabel">${count(st.assets.users)} Benutzer</small></div><div class="metric"><span>Service-Level</span><b>${cat.sla.labels[st.sla]}</b><small>Separat kalkuliert</small></div><div class="metric"><span>Monatlich netto</span><b data-live="monthly">${amt(t.monthly)}</b><small>Inkl. Managed Services</small></div><div class="metric"><span>Onboarding</span><b>${result ? `${(result.onboarding || []).filter(Boolean).length}/${cat.onboardingChecks.length}` : '–'}</b><small>${result ? 'Abgeschlossene Schritte' : 'Nach Unterschrift'}</small></div></div>
   <div class="workspace"><div class="workspace-main">${view === 'board' ? `<nav class="stepbar" aria-label="Angebotsprozess">${visible.map(([label, i]) => `<button class="step ${step === i ? 'active' : ''} ${step > i ? 'done' : ''}" data-step="${i}" ${result && i < 4 ? 'disabled' : ''}><span class="circle">${i + 1}</span>${label}</button>`).join('')}</nav>` : ''}
@@ -257,6 +258,7 @@ function render() {
   </div>`;
   bind();
   if (view === 'drafts') loadDrafts();
+  if (view === 'articles') loadArticles();
   if (step === 4 && !result && view === 'board') pad = signaturePad(root.querySelector('#sign'), () => { const h = root.querySelector('#sign-hint'); if (h) h.hidden = true; });
   if (step === 2) refreshWarnings();
   if (step === 3) refreshWarnings();
@@ -366,6 +368,8 @@ async function onClick(e) {
   if (!b) return;
   const a = b.dataset.action;
   const top = () => window.scrollTo(0, 0);
+  if (['artsearch', 'artsuggest', 'artset', 'artclear', 'artall'].includes(a)) return articleAction(a, b);
+  if (a === 'articles') { view = 'articles'; art = { list: null, sug: {}, searchFor: null, results: [], busy: false }; render(); top(); return; }
   if (a === 'next') { step = Math.min(STEPS.length - 1, step + 1); if (kv && step === 1) step = 2; render(); top(); }
   if (a === 'prev') { step = Math.max(0, step - 1); if (kv && step === 1) step = 0; render(); top(); }
   if (a === 'offer') { step = 3; view = 'board'; render(); top(); }
@@ -392,7 +396,10 @@ async function onClick(e) {
     try { const r = await ctx.api('/offer/drafts', { method: 'POST', body: payload() }); st.draftId = r.id; ctx.toast('Kundenstand gespeichert'); } catch (err) { ctx.toast(err.message, true); }
   }
   if (a === 'drafts') { view = 'drafts'; render(); top(); }
-  if (a === 'back') { view = 'board'; render(); }
+  if (a === 'back') {
+    if (catStale) { try { cat = await ctx.api('/offer/catalog'); catStale = false; } catch { /* alter Stand */ } }
+    view = 'board'; render();
+  }
   if (a === 'loaddraft') {
     try {
       const d = await ctx.api(`/offer/drafts/${encodeURIComponent(b.dataset.id)}`);
@@ -477,4 +484,96 @@ function signaturePad(canvas, onInk) {
   canvas.addEventListener('pointerup', end);
   canvas.addEventListener('pointercancel', end);
   return { clear: () => { c2d.clearRect(0, 0, canvas.width, canvas.height); ink = 0; }, hasInk: () => ink > 60, toDataURL: () => canvas.toDataURL('image/png') };
+}
+
+// ---------- Artikelzuordnung (intern) ----------
+let art = { list: null, sug: {}, searchFor: null, results: [], busy: false };
+
+function articlesView() {
+  if (!art.list) return '<p class="subtle">Lade Zuordnung aus weclapp …</p>';
+  const missing = art.list.filter((p) => p.status === 'missing').length;
+  const sugCount = Object.keys(art.sug).length;
+  const groups = [...new Set(art.list.map((p) => p.group))];
+  const row = (p) => {
+    const a = p.article, sg = art.sug[p.sku];
+    const state = p.status === 'missing'
+      ? '<span class="pill warn">nicht zugeordnet</span>'
+      : `<span class="pill">${p.status === 'mapped' ? 'zugeordnet' : 'gleiche Nummer'}</span>`;
+    return `<div class="section" style="padding:16px 18px;margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:start">
+        <div style="min-width:0"><strong>${esc(p.label)}</strong><div class="subtle">Board: ${esc(p.sku)}${p.price != null ? ` · ${amt(p.price)} / ${esc(p.unit)}` : ''}</div></div>
+        <div>${state}</div>
+      </div>
+      ${a ? `<div class="moneyline" style="border:0;padding:8px 0 0"><span>weclapp: <strong>${esc(a.number)}</strong> · ${esc(a.name)}${a.active ? '' : ' <span class="pill warn">inaktiv</span>'}</span><b>${a.price != null ? amt(a.price) : '–'}</b></div>
+        ${p.deviation ? `<div class="hint warning" style="margin:8px 0 0">Preis weicht ab: weclapp ${amt(a.price)}, Board ${amt(p.price)} (${p.deviation > 0 ? '+' : ''}${amt(p.deviation)}). Im Angebot gilt der Board-Preis.</div>` : ''}` : ''}
+      ${!a && sg ? `<div class="hint" style="margin:10px 0 0;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center"><span>Vorschlag: <strong>${esc(sg.number)}</strong> · ${esc(sg.name)}${sg.price != null ? ` · ${amt(sg.price)}` : ''} <span class="subtle">(${sg.score} % Übereinstimmung)</span></span><button class="btn btn-primary btn-small" data-action="artset" data-sku="${esc(p.sku)}" data-id="${esc(sg.id)}">Übernehmen</button></div>` : ''}
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+        <button class="btn btn-outline btn-small" data-action="artsearch" data-sku="${esc(p.sku)}">${a ? 'Anderen Artikel wählen' : 'Artikel suchen'}</button>
+        ${p.status === 'mapped' ? `<button class="btn btn-outline btn-small" data-action="artclear" data-sku="${esc(p.sku)}">Zuordnung lösen</button>` : ''}
+      </div>
+      ${art.searchFor === p.sku ? `<div class="field" style="margin-top:12px"><label for="art-q">weclapp-Artikel suchen (Name oder Nummer)</label><input id="art-q" type="search" autocomplete="off" placeholder="z. B. Managed Client"></div><div class="cust-results" id="art-results">${artResults(p.sku)}</div>` : ''}
+    </div>`;
+  };
+  return `<span class="eyebrow">Intern · Artikelzuordnung</span><h2>Board-Positionen mit weclapp verbinden.</h2>
+  <p class="lead">Jede Position im Board braucht einen echten weclapp-Artikel. Erst dann können Angebot und Auftrag angelegt werden. Im Angebot gilt der Board-Preis, im PDF erscheint die weclapp-Artikelnummer.</p>
+  <div class="hint ${missing ? 'warning' : ''}">${missing ? `<strong>${missing} von ${art.list.length} Positionen</strong> sind noch keinem weclapp-Artikel zugeordnet.` : '<strong>Alle Positionen sind zugeordnet.</strong>'} Positionen, die du nicht verkaufst (z. B. noch nicht freigegebene SLA-Pakete), können offen bleiben – sie blockieren nur Angebote, die sie enthalten.</div>
+  <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px"><button class="btn btn-outline" data-action="artsuggest" ${art.busy ? 'disabled' : ''}>${art.busy ? 'Suche Vorschläge …' : 'Vorschläge suchen'}</button>${sugCount ? `<button class="btn btn-primary" data-action="artall">Alle ${sugCount} Vorschläge übernehmen</button>` : ''}<button class="btn btn-outline" data-action="back">← Zurück zum Angebot</button></div>
+  ${groups.map((g) => `<div class="category-head"><h3>${esc(g)}</h3></div>${art.list.filter((p) => p.group === g).map(row).join('')}`).join('')}`;
+}
+
+function artResults(sku) {
+  if (!art.results.length) return '<p class="subtle">Mindestens 2 Zeichen eingeben.</p>';
+  return art.results.map((a) => `<button type="button" data-action="artset" data-sku="${esc(sku)}" data-id="${esc(a.id)}"><span><strong>${esc(a.number)}</strong> · ${esc(a.name)}</span><span class="subtle">${a.price != null ? amt(a.price) : ''}</span></button>`).join('');
+}
+
+async function loadArticles() {
+  try {
+    const { positions } = await ctx.api('/offer/articles');
+    art.list = positions;
+  } catch (e) { ctx.toast(e.message, true); art.list = []; }
+  drawArticles();
+}
+
+function drawArticles() {
+  const m = root.querySelector('#ob-main');
+  if (!m || view !== 'articles') return;
+  m.innerHTML = articlesView();
+  const q = m.querySelector('#art-q');
+  if (q) {
+    q.focus();
+    q.addEventListener('input', () => {
+      clearTimeout(custSearchTimer);
+      custSearchTimer = setTimeout(async () => {
+        try { art.results = (await ctx.api('/offer/articles/search?q=' + encodeURIComponent(q.value))).articles; } catch (e) { art.results = []; ctx.toast(e.message, true); }
+        const box = m.querySelector('#art-results');
+        if (box) box.innerHTML = artResults(art.searchFor);
+      }, 250);
+    });
+  }
+}
+
+async function articleAction(a, b) {
+  if (a === 'artsearch') { art.searchFor = art.searchFor === b.dataset.sku ? null : b.dataset.sku; art.results = []; drawArticles(); }
+  if (a === 'artsuggest') {
+    art.busy = true; drawArticles();
+    try { art.sug = (await ctx.api('/offer/articles/suggest', { method: 'POST' })).suggestions; if (!Object.keys(art.sug).length) ctx.toast('Keine passenden Vorschläge gefunden'); } catch (e) { ctx.toast(e.message, true); }
+    art.busy = false; drawArticles();
+  }
+  if (a === 'artset' || a === 'artclear') {
+    try {
+      const r = await ctx.api(`/offer/articles/${encodeURIComponent(b.dataset.sku)}`, { method: 'PUT', body: { articleId: a === 'artset' ? b.dataset.id : null } });
+      art.list = r.positions;
+      delete art.sug[b.dataset.sku];
+      art.searchFor = null;
+      catStale = true; // Katalog (fehlende Artikel) beim Zurückgehen neu laden
+    } catch (e) { ctx.toast(e.message, true); }
+    drawArticles();
+  }
+  if (a === 'artall') {
+    for (const [sku, sg] of Object.entries(art.sug)) {
+      try { art.list = (await ctx.api(`/offer/articles/${encodeURIComponent(sku)}`, { method: 'PUT', body: { articleId: sg.id } })).positions; delete art.sug[sku]; } catch (e) { ctx.toast(`${sku}: ${e.message}`, true); }
+    }
+    catStale = true;
+    drawArticles();
+  }
 }

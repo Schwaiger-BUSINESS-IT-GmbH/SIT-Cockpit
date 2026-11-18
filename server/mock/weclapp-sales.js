@@ -1,7 +1,5 @@
 // Vertriebsteil des weclapp-Mocks: Managed-Service-Artikel, Angebote,
 // Aufträge, Rechnungen, Verträge. Feld- und Statusnamen wie in der weclapp-API v2.
-import fs from 'node:fs';
-
 const D = 864e5;
 const now = Date.now();
 const ago = (days) => now - days * D;
@@ -9,18 +7,23 @@ const ago = (days) => now - days * D;
 export function registerSales(r, { applyFilters, parties, tickets, documents, articles }) {
   const categories = [{ id: '900', name: 'Managed Services' }, { id: '901', name: 'Hardware' }];
   const units = [{ id: 'u1', name: 'Stk.' }, { id: 'u2', name: 'Arbeitsplatz' }, { id: 'u3', name: 'Server' }, { id: 'u4', name: 'Benutzer' }, { id: 'u5', name: 'Firewall' }, { id: 'u6', name: 'Pauschale' }, { id: 'u7', name: 'Gerät' }];
-  // Artikel für alle Artikelnummern des Angebotsboards (config/angebotsboard.json)
-  const board = JSON.parse(fs.readFileSync(new URL('../../config/angebotsboard.json', import.meta.url), 'utf8'));
-  const skus = [
-    ...board.products.map((p) => [p.sku, p.name, p.price]),
-    ...Object.entries(board.sla.skuBase).map(([k, sku]) => [sku, `Service-Level ${board.sla.labels[k]} – Grundgebühr`, board.sla.rates[k].base]),
-    ...Object.entries(board.sla.skuUser).map(([k, sku]) => [sku, `Service-Level ${board.sla.labels[k]} – Benutzer`, board.sla.rates[k].user]),
-    [board.sla.site.sku, 'Zusätzlicher Standort', board.sla.site.price],
-    [board.sla.setup.sku, 'SLA-Einrichtung und Dokumentation', board.sla.setup.price],
-    ...Object.values(board.sla.reviews).map((r) => [r.sku, r.name, r.price]),
-    [board.projectSku, 'Projektleistung', 0],
-  ];
-  skus.forEach(([articleNumber, name, price], i) => articles.push({
+  // Realistische weclapp-Artikel: eigene Artikelnummern und Namen, NICHT die Board-Kennungen.
+  // Die Verknüpfung passiert im Board unter "Artikelzuordnung" (Vorschläge über den Namen).
+  // Bewusst: SLA-Pakete fehlen (neu), Firewall Premium hat einen abweichenden Preis.
+  [
+    ['10010', 'Next Security Ultimate MXDR', 25],
+    ['10011', 'Next Security Professional', 19],
+    ['10012', 'Next Security Node', 14],
+    ['10020', 'Managed Client Premium', 18],
+    ['10021', 'Managed Server Premium', 99],
+    ['10030', 'Managed Firewall Essential (FortiGate)', 149],
+    ['10031', 'Managed Firewall Business (FortiGate)', 249],
+    ['10032', 'Managed Firewall Premium (FortiGate)', 459],
+    ['10040', 'Client Flatrate Fernunterstützung', 19.9],
+    ['10041', 'Server Flatrate Fernunterstützung', 49.9],
+    ['10090', 'Projektleistung Sonderaufwand', 0],
+    ['10050', 'SLA-Einrichtung und Dokumentation', 290],
+  ].forEach(([articleNumber, name, price], i) => articles.push({
     id: String(800 + i), articleNumber, name, unitId: 'u1', articleType: 'SERVICE', active: true, articleCategoryId: '900',
     articlePrices: [{ price: String(price), currencyId: '1', salesChannel: 'NET1', priceScaleValue: '1', startDate: ago(400) }],
   }));
@@ -83,6 +86,10 @@ export function registerSales(r, { applyFilters, parties, tickets, documents, ar
   };
 
   r.get('/articleCategory', list(categories));
+  r.get('/article/id/:id', (req, res) => {
+    const a = articles.find((x) => x.id === req.params.id);
+    a ? res.json(a) : res.status(404).json({ title: 'Not Found' });
+  });
   r.get('/unit', list(units));
   r.get('/quotation', list(quotations));
   r.get('/quotation/count', (req, res) => res.json({ result: applyFilters(quotations, req.query).length }));

@@ -55,7 +55,30 @@ test('Prüfpunkte blockieren die Unterschrift ohne interne Freigabe', async () =
   await assert.rejects(offers.signAndCreate('demo-rene', input, { userId: '101', name: 'Test' }), /Prüfpunkte/);
 });
 
-test('Neukunde + Unterschrift -> Kunde, Angebot, Auftrag in weclapp', async () => {
+test('Artikelzuordnung: Vorschläge über den Namen, Preisabweichung erkannt', async () => {
+  const sug = await offers.suggestArticles('demo-rene');
+  assert.equal(sug['SIT-MCLI-PRE']?.number, '10020');
+  assert.equal(sug['SIT-MFW-ESS']?.number, '10030');
+  assert.equal(sug['SIT-SLA-STD-G'], undefined); // SLA-Pakete gibt es (noch) nicht
+  await offers.setArticleMapping('demo-rene', 'SIT-MFW-PRE', sug['SIT-MFW-PRE'].id, { name: 'Test' });
+  const list = await offers.articleMapping('demo-rene');
+  const fw = list.find((p) => p.sku === 'SIT-MFW-PRE');
+  assert.equal(fw.status, 'mapped');
+  assert.equal(fw.deviation, 10); // weclapp 459 € statt 449 €
+});
+
+test('Ohne Zuordnung bleibt der Vorgang gespeichert und meldet die Position', async () => {
+  const r = await offers.signAndCreate('demo-rene', {
+    customer: { id: '501', company: 'Bäckerei Huber GmbH' }, products: [sel('serverremote', 1)],
+    ready: true, signerName: 'Max Muster', acceptedTerms: true, signature: SIG,
+  }, { userId: '101', name: 'Test' });
+  assert.equal(r.status, 'weclapp-failed');
+  assert.match(r.warningsWeclapp.join(' '), /SIT-SUP-SRV/);
+});
+
+test('Neukunde + Unterschrift -> Kunde, Angebot, Auftrag in weclapp (mit zugeordneten Artikeln)', async () => {
+  const sug = await offers.suggestArticles('demo-rene');
+  for (const sku of ['SIT-MCLI-PRE', 'SIT-MFW-ESS']) await offers.setArticleMapping('demo-rene', sku, sug[sku].id, { name: 'Test' });
   const r = await offers.signAndCreate('demo-rene', {
     customer: { company: 'Neu GmbH', contact: 'Anna Neu', mail: 'office@neu.example' },
     assets: { users: 5, clients: 5, servers: 1, firewalls: 1, sites: 1 },
@@ -69,4 +92,5 @@ test('Neukunde + Unterschrift -> Kunde, Angebot, Auftrag in weclapp', async () =
   assert.equal(r.status, 'done');
   assert.equal(r.signature, undefined); // Unterschrift nie an den Browser zurück
   assert.equal(r.totals.monthly, 5 * 18 + 149);
+  assert.deepEqual(r.monthly.map((l) => l.articleNumber), ['10020', '10030']); // echte Nummern fürs PDF
 });

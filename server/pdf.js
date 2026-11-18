@@ -100,7 +100,7 @@ export function renderOfferPdf(rec) {
         const top = y;
         doc.font('Helvetica-Bold').fontSize(9).fillColor(INK).text(it.name, cols.name[0], y, { width: cols.name[1] });
         y = doc.y;
-        doc.font('Helvetica').fontSize(7.5).fillColor(MUTED).text(it.sku + (it.tierActive ? ' · Staffelpreis' : ''), cols.name[0], y);
+        doc.font('Helvetica').fontSize(7.5).fillColor(MUTED).text([rec.preview ? '' : (it.articleNumber || ''), it.tierActive ? 'Staffelpreis' : ''].filter(Boolean).join(' · ') || ' ', cols.name[0], y);
         y = doc.y + 2;
         doc.font('Helvetica').fontSize(9).fillColor(INK);
         doc.text(String(it.qty), cols.qty[0], top, { width: cols.qty[1], align: 'right' });
