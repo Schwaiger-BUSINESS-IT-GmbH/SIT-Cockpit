@@ -7,6 +7,7 @@ import * as atera from './atera.js';
 import * as sales from './sales.js';
 import * as offers from './offers.js';
 import * as tickets from './tickets.js';
+import * as custmap from './customermap.js';
 import { registerTimeRoutes } from './time-routes.js';
 import { getStored, saveStored, removeStored } from './tokens.js';
 import { setSession, clearSession, requireSession, entraPrincipal, requireEntraIfConfigured } from './session.js';
@@ -107,11 +108,15 @@ api.get('/atera/customers/:id', h(async (req, res) => {
   const customer = (c.customers || []).find((x) => String(x.id) === String(req.params.id));
   if (!customer) return res.status(404).json({ error: 'Kunde in Atera nicht gefunden' });
   // Zugehörigen weclapp-Kunden suchen (Kundennummer aus Atera-Feld, sonst Name)
-  const number = await atera.customerNumber(customer.id);
-  const party = await sales.findParty(req.session.token, { number, name: customer.name }).catch(() => null);
+  const party = await custmap.resolveParty(req.session.token, customer).catch(() => null);
   const weclapp = party ? await sales.customerFacts(req.session.token, party.id).catch((e) => ({ error: e.message })) : null;
   res.json({ updatedAt: c.at, customer, party, weclapp, ticketLinks: tickets.ticketLinks(customer.id) });
 }));
+
+// ---------- Kundenzuordnung Atera -> weclapp ----------
+api.get('/customer-map', h(async (req, res) => res.json(await custmap.mappingOverview(req.session.token))));
+api.get('/customer-map/search', h(async (req, res) => res.json({ parties: await custmap.searchParties(req.session.token, req.query.q) })));
+api.put('/customer-map/:ateraId', h(async (req, res) => res.json(await custmap.setMapping(req.session.token, req.params.ateraId, req.body?.partyId || null, req.session))));
 
 // ---------- Ticket aus einem Atera-Problem ----------
 api.get('/atera-tickets/meta', h(async (req, res) => res.json(await tickets.ticketMeta(req.session.token, req.session.userId))));

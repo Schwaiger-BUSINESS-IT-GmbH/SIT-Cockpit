@@ -15,10 +15,10 @@ const parties = [
   ['504', 'Tischlerei Gruber', 'K-10004', 'Freistadt', 'Josef Gruber', 'info@tischlerei-gruber.example'],
   ['505', 'Ordination Dr. Wimmer', 'K-10005', 'Linz', 'Dr. Sabine Wimmer', 'ordination@wimmer.example'],
   ['506', 'Hotel Seeblick GmbH', 'K-10006', 'Gmunden', 'Andrea Leitner', 'rezeption@seeblick.example'],
-  ['507', 'Bauunternehmen Wagner & Söhne', 'K-10007', 'Ried im Innkreis', 'Ing. Karl Wagner', 'office@wagner-bau.example'],
+  ['507', 'Wagner & Söhne Bau GmbH', 'K-10007', 'Ried im Innkreis', 'Ing. Karl Wagner', 'office@wagner-bau.example'],
   ['508', 'Gemeindeamt Neukirchen', 'K-10008', 'Neukirchen', 'AL Petra Moser', 'gemeinde@neukirchen.example'],
-  ['509', 'Kanzlei Dr. Pichler', 'K-10009', 'Linz', 'Dr. Martin Pichler', 'kanzlei@pichler.example'],
-  ['510', 'Elektro Hofer e.U.', 'K-10010', 'Enns', 'Stefan Hofer', 'office@elektro-hofer.example'],
+  ['509', 'Rechtsanwaltskanzlei Dr. Pichler', 'K-10009', 'Linz', 'Dr. Martin Pichler', 'kanzlei@pichler.example'],
+  ['510', 'Hofer Elektrotechnik e.U.', 'K-10010', 'Enns', 'Stefan Hofer', 'office@elektro-hofer.example'],
   ['511', 'Fitnessstudio Kraftwerk', 'K-10011', 'Linz', 'Lisa Berger', 'hallo@kraftwerk.example'],
 ].map(([id, company, customerNumber, city, contact, email]) => ({
   id, company, customerNumber, customer: true, partyType: 'ORGANIZATION', email,

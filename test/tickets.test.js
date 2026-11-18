@@ -47,3 +47,13 @@ test('Ohne weclapp-Kunde oder Betreff wird nichts angelegt', async () => {
   await assert.rejects(tk.createTicket('demo-rene', { subject: 'X-Problem' }, session), /Kein weclapp-Kunde/);
   await assert.rejects(tk.createTicket('demo-rene', { partyId: '503', subject: '' }, session), /Betreff/);
 });
+
+test('Kundenzuordnung: unscharfer Namensvergleich', async () => {
+  const cm = await import('../server/customermap.js');
+  const parties = [{ id: '1', name: 'Schwing-Stetter Austria GmbH' }, { id: '2', name: 'Bäckerei Weinberger KG' }, { id: '3', name: 'Bäckerei Huber' }, { id: '4', name: 'Hofer Elektrotechnik e.U.' }];
+  assert.equal(cm.bestMatches('Bäckerei Weinberger', parties)[0].id, '2');
+  assert.equal(cm.bestMatches('Schwing Stetter', parties)[0].id, '1');
+  assert.equal(cm.bestMatches('Elektro Hofer e.U.', parties)[0].id, '4');
+  assert.equal(cm.bestMatches('NOE', parties).length, 0);
+  assert.equal(cm.normName('Muster GmbH & Co. KG'), 'muster');
+});

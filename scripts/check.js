@@ -275,7 +275,11 @@ async function checkAtera() {
   head(`Zuordnung Atera → weclapp (Kundenfeld „${FIELD}“)`);
   const sample = customers.slice(0, 25);
   let withNr = 0, matched = 0, noMatch = [];
+  // im Cockpit bestätigte Zuordnungen (Kundenzuordnung) zählen als Treffer
+  let cmap = {};
+  try { cmap = JSON.parse(fs.readFileSync(`${(env.DATA_DIR || new URL('../data/', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')).replace(/\/$/, '')}/customer-map.json`, 'utf8')); } catch { /* keine */ }
   for (const cu of sample) {
+    if (cmap[String(cu.CustomerID)]?.partyId) { matched++; continue; }
     let nr = null;
     try {
       const d = await aget(`/customvalues/customerfield/${encodeURIComponent(cu.CustomerID)}/${encodeURIComponent(FIELD)}`);
@@ -293,10 +297,11 @@ async function checkAtera() {
     }
   }
   if (!sample.length) return;
-  (withNr === sample.length ? ok : warn)(`${withNr} von ${sample.length} geprüften Kunden haben eine weclapp-Kundennummer in Atera`);
+  const viaCockpit = sample.filter((cu) => cmap[String(cu.CustomerID)]?.partyId).length;
+  info(`${viaCockpit} über die Kundenzuordnung im Cockpit, ${withNr} über das Atera-Feld`);
   if (WC && TOKEN) {
     (matched === sample.length ? ok : warn)(`${matched} von ${sample.length} Kunden in weclapp gefunden`);
-    if (noMatch.length) info(`ohne Treffer: ${noMatch.slice(0, 10).join(' · ')}${noMatch.length > 10 ? ' …' : ''}`);
+    if (noMatch.length) info(`ohne Treffer: ${noMatch.slice(0, 10).join(' · ')}${noMatch.length > 10 ? ' …' : ''} → im Cockpit unter „Kunden & Geräte → Kundenzuordnung weclapp“ verknüpfen`);
   }
 }
 

@@ -30,7 +30,7 @@ npm start
 **Vorbereitung in den Systemen**
 
 1. **Atera:** API-Schlüssel unter *Admin → API* erzeugen → `ATERA_API_KEY`. Neue Schlüssel (JWT, ab der Umstellung 12/2026) sendet das Cockpit automatisch als `Authorization: Bearer`, alte weiterhin als `X-API-KEY`. Benötigte Rechte: Customers, Agents, Alerts, CustomValues.
-   Für die Verknüpfung mit weclapp ein Kunden-Zusatzfeld **„weclapp-Kundennummer“** anlegen und befüllen (sonst wird nach exaktem Firmennamen gesucht).
+   **Kunden verknüpfen:** im Cockpit unter *Kunden & Geräte → Kundenzuordnung weclapp* (Vorschläge über unscharfen Namensvergleich, Suche, gespeichert in `DATA_DIR/customer-map.json`). Alternativ oder zusätzlich das Atera-Kundenfeld **„weclapp-Kundennummer“** befüllen. Reihenfolge: Cockpit-Zuordnung → Atera-Feld → exakt gleicher Firmenname.
 2. **weclapp-Artikel zuordnen:** Die Artikelnummern in `config/angebotsboard.json` sind Board-interne Kennungen. Im Angebotsboard unter **Artikelzuordnung** jede Position mit dem echten weclapp-Artikel verknüpfen: *Vorschläge suchen* (über den Namen) → übernehmen, Rest über die Suche. Gespeichert in `DATA_DIR/article-map.json`. Preisabweichungen weclapp ↔ Board werden angezeigt; im Angebot gilt der Board-Preis, im PDF steht die weclapp-Artikelnummer. Positionen, die (noch) nicht verkauft werden, können offen bleiben.
 3. **Anmeldung:** jeder Mitarbeiter mit seinem persönlichen weclapp-API-Token (*Mein Profil → API*). Es gelten seine weclapp-Rechte, z. B. sieht nur, wer Rechnungen sehen darf, die Rechnungs-Kacheln.
 

@@ -93,12 +93,12 @@ function route() {
   pageTimer = null;
   const [, page = 'kunden', id] = location.hash.split('/');
   $$('.side-nav a').forEach((a) => {
-    if (a.dataset.nav === page) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+    if (a.dataset.nav === page || (page === 'zuordnung' && a.dataset.nav === 'kunden')) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
   });
   content.classList.toggle('flush', page === 'zeiten');
   content.classList.remove('board-host');
   if (page !== 'angebot') leaveBoard();
-  const pages = { kunden: id ? () => renderCustomer(id) : renderCustomers, dashboard: renderDashboard, angebot: renderOffer, zeiten: renderTime };
+  const pages = { kunden: id ? () => renderCustomer(id) : renderCustomers, zuordnung: renderCustomerMap, dashboard: renderDashboard, angebot: renderOffer, zeiten: renderTime };
   (pages[page] || renderCustomers)();
   window.scrollTo(0, 0);
 }
@@ -164,6 +164,7 @@ function drawCustomers(keepFocus = false) {
       <div><div class="eyebrow">Atera · Kunden &amp; Geräte</div><h1>Kundenübersicht</h1></div>
       <div class="page-actions">
         <span class="stamp ${stale ? 'stale' : ''}">Stand: ${d.updatedAt ? ago(d.updatedAt) : '–'}</span>
+        <a class="btn ghost" href="#/zuordnung">Kundenzuordnung weclapp</a>
         <button class="btn ghost" id="reload" type="button">Jetzt aktualisieren</button>
       </div>
     </div>
@@ -248,7 +249,7 @@ async function renderCustomer(id) {
       </div>
     </div>
     ${c.problems.map((p, i) => `<div class="banner ${p.status === 'critical' ? 'crit' : 'warn'}" style="justify-content:space-between;flex-wrap:wrap"><div><b>${p.kind === 'outage' ? 'Möglicher Strom- oder Internetausfall' : esc(p.text)}</b>${p.kind === 'outage' ? esc(p.text.replace(/^[^:]+:\s*/, '')) + '. Kunden anrufen und Stromversorgung bzw. Internetanschluss prüfen lassen.' : ''}</div>${ticketBtn(null, p, i)}</div>`).join('')}
-    ${!d.party ? `<div class="banner info"><div><b>Kein weclapp-Kunde zugeordnet</b>Trag in Atera beim Kunden das Feld „weclapp-Kundennummer“ ein, dann erscheinen Tickets, Verträge und Angebote hier.</div></div>` : ''}
+    ${!d.party ? `<div class="banner info"><div><b>Kein weclapp-Kunde zugeordnet</b>Unter <a href="#/zuordnung">Kundenzuordnung</a> verknüpfen (oder in Atera das Feld „weclapp-Kundennummer“ befüllen), dann erscheinen Tickets, Verträge und Angebote hier und es lassen sich Tickets anlegen.</div></div>` : ''}
     <section class="kpis">
       <div class="kpi"><div class="label">Server online</div><div class="value">${c.servers - c.serversDown}<span class="muted" style="font-size:16px"> / ${c.servers}</span></div><div class="sub">${c.firewalls ? `Firewall: ${c.firewallsDown ? 'nicht erreichbar' : 'erreichbar'}` : 'keine Firewall überwacht'}</div></div>
       <div class="kpi ${c.counts.critical ? 'crit' : c.counts.warning ? 'warn' : ''}"><div class="label">Handlungsbedarf</div><div class="value">${c.counts.critical + c.counts.warning}</div><div class="sub">${c.counts.critical} kritisch · ${c.counts.warning} Warnung</div></div>
@@ -403,6 +404,82 @@ function device(x, open) {
       <div><a class="btn small" href="${esc(x.url)}" target="_blank" rel="noopener">In Atera öffnen / Fernwartung</a></div>`}
     </div>
   </details>`;
+}
+
+// =====================================================================
+// Kundenzuordnung Atera -> weclapp
+// =====================================================================
+const MATCHED = { cockpit: 'im Cockpit zugeordnet', 'atera-feld': 'über Atera-Feld', name: 'gleicher Name' };
+let cmap = { data: null, searchFor: null, results: [], filter: 'open' };
+
+async function renderCustomerMap() {
+  const seq = navSeq;
+  content.innerHTML = '<p class="loading">Lade Atera- und weclapp-Kunden …</p>';
+  try { cmap.data = await api('/customer-map'); } catch (e) {
+    if (stale(seq)) return;
+    content.innerHTML = `<div class="banner crit"><div><b>Kundenzuordnung nicht verfügbar</b>${esc(e.message)}</div></div>`;
+    return;
+  }
+  if (stale(seq)) return;
+  drawCustomerMap();
+}
+
+function drawCustomerMap() {
+  const all = cmap.data.customers;
+  const open = all.filter((c) => !c.current?.id);
+  const sure = open.filter((c) => c.suggestions[0]?.score >= 0.85);
+  const list = cmap.filter === 'open' ? open : all;
+  const row = (c) => {
+    const cur = c.current;
+    const sg = c.suggestions;
+    return `<div class="card" style="padding:14px 16px;margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-start">
+        <div style="min-width:0"><b>${esc(c.name)}</b> ${chip(c.status)}<div class="muted small">Atera-Kunde ${esc(c.ateraId)}</div></div>
+        <div style="text-align:right">${cur?.id ? `<b>${esc(cur.name)}</b><div class="muted small">${esc(cur.number || '')} · ${MATCHED[cur.matchedBy] || ''}</div>` : cur?.matchedBy === 'atera-feld-fehlt' ? `<span class="chip warning">Atera-Nummer ${esc(cur.number)} nicht in weclapp</span>` : '<span class="chip neutral">nicht zugeordnet</span>'}</div>
+      </div>
+      ${!cur?.id && sg.length ? `<div style="display:grid;gap:6px;margin-top:10px">${sg.map((p) => `<div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;background:var(--surface-2);border-radius:6px;padding:6px 10px"><span>Vorschlag: <b>${esc(p.name)}</b> <span class="muted small">${esc(p.number || '')} · ${Math.round(p.score * 100)} %</span></span><button class="btn small primary" type="button" data-cm-set="${esc(c.ateraId)}" data-party="${esc(p.id)}">Übernehmen</button></div>`).join('')}</div>` : ''}
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+        <button class="btn small ghost" type="button" data-cm-search="${esc(c.ateraId)}">${cur?.id ? 'Anderen weclapp-Kunden wählen' : 'weclapp-Kunden suchen'}</button>
+        ${cur?.matchedBy === 'cockpit' ? `<button class="btn small ghost" type="button" data-cm-set="${esc(c.ateraId)}" data-party="">Zuordnung lösen</button>` : ''}
+      </div>
+      ${cmap.searchFor === c.ateraId ? `<div style="margin-top:10px"><input id="cm-q" class="search" style="max-width:none;width:100%" type="search" placeholder="Name oder Kundennummer in weclapp …" autocomplete="off"><div id="cm-results" style="display:grid;gap:6px;margin-top:8px"></div></div>` : ''}
+    </div>`;
+  };
+  content.innerHTML = `
+    <p style="margin:0 0 10px"><a href="#/kunden">← Kundenübersicht</a></p>
+    <div class="page-head"><div><div class="eyebrow">Atera → weclapp</div><h1>Kundenzuordnung</h1></div>
+      <div class="page-actions">${sure.length ? `<button class="btn primary" type="button" id="cm-all">${sure.length} sichere Vorschläge übernehmen (≥ 85 %)</button>` : ''}</div></div>
+    <div class="banner info"><div><b>${all.length - open.length} von ${all.length} Kunden zugeordnet</b>Die Zuordnung verbindet einen Atera-Kunden mit seinem weclapp-Kunden – für Tickets, Verträge, offene Angebote und „Ticket erstellen“. Gespeichert im Cockpit; ein in Atera befülltes Feld „weclapp-Kundennummer“ wird ebenfalls erkannt. ${cmap.data.partyCount} weclapp-Kunden geladen.</div></div>
+    <div class="toolbar"><div class="seg" role="group" aria-label="Filter">${[['open', `Offen (${open.length})`], ['all', `Alle (${all.length})`]].map(([k, t]) => `<button type="button" data-cm-filter="${k}" aria-pressed="${cmap.filter === k}">${t}</button>`).join('')}</div></div>
+    ${list.length ? list.map(row).join('') : '<div class="banner ok"><div><b>Alle Kunden sind zugeordnet</b></div></div>'}`;
+  $$('[data-cm-filter]').forEach((b) => (b.onclick = () => { cmap.filter = b.dataset.cmFilter; drawCustomerMap(); }));
+  $$('[data-cm-search]').forEach((b) => (b.onclick = () => { cmap.searchFor = cmap.searchFor === b.dataset.cmSearch ? null : b.dataset.cmSearch; drawCustomerMap(); }));
+  $$('[data-cm-set]').forEach((b) => (b.onclick = () => setCustomerMap(b.dataset.cmSet, b.dataset.party)));
+  $('#cm-all')?.addEventListener('click', async () => {
+    for (const c of sure) await api(`/customer-map/${encodeURIComponent(c.ateraId)}`, { method: 'PUT', body: { partyId: c.suggestions[0].id } }).catch((e) => toast(`${c.name}: ${e.message}`, true));
+    toast(`${sure.length} Kunden zugeordnet`);
+    renderCustomerMap();
+  });
+  const q = $('#cm-q');
+  if (q) {
+    q.focus();
+    let t;
+    q.oninput = () => { clearTimeout(t); t = setTimeout(async () => {
+      const { parties } = await api('/customer-map/search?q=' + encodeURIComponent(q.value)).catch(() => ({ parties: [] }));
+      $('#cm-results').innerHTML = parties.map((p) => `<button class="btn ghost" style="justify-content:space-between" type="button" data-cm-pick="${esc(p.id)}"><span>${esc(p.name)}</span><span class="muted small">${esc(p.number || '')}</span></button>`).join('') || '<p class="muted">Kein Treffer.</p>';
+      $$('[data-cm-pick]').forEach((b) => (b.onclick = () => setCustomerMap(cmap.searchFor, b.dataset.cmPick)));
+    }, 250); };
+  }
+}
+
+async function setCustomerMap(ateraId, partyId) {
+  try {
+    await api(`/customer-map/${encodeURIComponent(ateraId)}`, { method: 'PUT', body: { partyId: partyId || null } });
+    cmap.searchFor = null;
+    const y = window.scrollY;
+    await renderCustomerMap();
+    window.scrollTo(0, y);
+  } catch (e) { toast(e.message, true); }
 }
 
 // =====================================================================
