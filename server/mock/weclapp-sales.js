@@ -65,6 +65,52 @@ export function registerSales(r, { applyFilters, parties, tickets, documents, ar
     grossAmount: gross.toFixed(2), netAmount: (gross / 1.2).toFixed(2), paid: false, paymentStatus: 'OPEN', status: 'OPEN_ITEM_CREATED',
   }));
 
+  // ---------- Finanzdaten (Demo) ----------
+  let seed = 7;
+  const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+  const today = new Date();
+  const monthsBack = 22;
+  // bezahlte Ausgangsrechnungen der letzten ~2 Jahre (Umsatz-Historie) + eine Gutschrift
+  for (let m = monthsBack; m >= 0; m--) {
+    const base = 14000 + (monthsBack - m) * 350;
+    for (let k = 0; k < 6; k++) {
+      const d = new Date(today.getFullYear(), today.getMonth() - m, 2 + k * 4);
+      if (d.getTime() > now) continue;
+      const net = Math.round((base / 6) * (0.6 + rnd() * 0.8) * 100) / 100;
+      salesInvoices.push({ id: `h${m}-${k}`, invoiceNumber: String(40000 + m * 10 + k), customerId: parties[(m + k) % parties.length].id, invoiceDate: d.getTime(), dueDate: d.getTime() + 14 * D,
+        netAmount: net.toFixed(2), vatAmount: (net * 0.2).toFixed(2), grossAmount: (net * 1.2).toFixed(2), paid: true, paymentStatus: 'PAID', status: 'OPEN_ITEM_CREATED', salesInvoiceType: 'STANDARD_INVOICE' });
+    }
+  }
+  salesInvoices.push({ id: 'gs1', invoiceNumber: '49001', customerId: '503', invoiceDate: ago(20), dueDate: ago(6), netAmount: '250.00', vatAmount: '50.00', grossAmount: '300.00', paid: true, paymentStatus: 'PAID', status: 'OPEN_ITEM_CREATED', salesInvoiceType: 'CREDIT_NOTE' });
+  for (const i of salesInvoices) { if (!i.vatAmount) i.vatAmount = (Number(i.grossAmount) - Number(i.netAmount)).toFixed(2); if (!i.salesInvoiceType) i.salesInvoiceType = 'STANDARD_INVOICE'; }
+
+  const suppliers = [['601', 'Distributor IT-Handel GmbH'], ['602', 'Microsoft Ireland Operations'], ['603', 'A1 Telekom Austria AG'], ['604', 'Kaspersky Labs GmbH'], ['605', 'Büro & Miete Linz KG']];
+  for (const [id, company] of suppliers) parties.push({ id, company, supplier: true, customer: false, partyType: 'ORGANIZATION', addresses: [] });
+  const purchaseInvoices = [];
+  for (let m = monthsBack; m >= 0; m--) {
+    for (let k = 0; k < 4; k++) {
+      const d = new Date(today.getFullYear(), today.getMonth() - m, 3 + k * 6);
+      if (d.getTime() > now) continue;
+      const net = Math.round((2400 + rnd() * 1800) * 100) / 100;
+      purchaseInvoices.push({ id: `p${m}-${k}`, invoiceNumber: `ER-${m}${k}`, internalInvoiceNumber: String(70000 + m * 10 + k), supplierId: suppliers[(m + k) % suppliers.length][0], invoiceDate: d.getTime(), dueDate: d.getTime() + 21 * D,
+        netAmount: net.toFixed(2), vatAmount: (net * 0.2).toFixed(2), grossAmount: (net * 1.2).toFixed(2), paymentStatus: m === 0 && k > 1 ? 'OPEN' : 'PAID', status: 'OPEN_ITEM_CREATED', purchaseInvoiceType: 'STANDARD_INVOICE', paymentBlock: false });
+    }
+  }
+  [[-8, 1840.5, '601', false], [-2, 612.0, '603', false], [3, 4890.0, '602', false], [9, 1290.0, '604', true], [25, 2100.0, '605', false]].forEach(([inDays, gross, supplierId, block], i) => purchaseInvoices.push({
+    id: `po${i}`, invoiceNumber: `ER-O${i}`, internalInvoiceNumber: String(79000 + i), supplierId, invoiceDate: now - 20 * D, dueDate: now + inDays * D,
+    netAmount: (gross / 1.2).toFixed(2), vatAmount: (gross - gross / 1.2).toFixed(2), grossAmount: gross.toFixed(2), paymentStatus: 'OPEN', status: 'OPEN_ITEM_CREATED', purchaseInvoiceType: 'STANDARD_INVOICE', paymentBlock: block }));
+
+  const bankAccounts = [
+    { id: 'b1', creditInstitute: 'Raiffeisenbank Oberösterreich', accountHolder: 'Schwaiger BUSINESS IT GmbH', iban: 'AT611904300234573201', balance: '48230.55', currencyId: '1', lastDownload: now - 6 * 3600e3, connectionFailure: false, creditLine: '20000', primary: true, active: true, autoSync: true },
+    { id: 'b2', creditInstitute: 'Erste Bank', accountHolder: 'Schwaiger BUSINESS IT GmbH', iban: 'AT022011100000012345', balance: '12450.10', currencyId: '1', lastDownload: now - 30 * 3600e3, connectionFailure: false, creditLine: '0', primary: false, active: true, autoSync: true },
+  ];
+  const bankTransactions = [];
+  for (let i = 0; i < 90; i++) {
+    if (rnd() < 0.55) bankTransactions.push({ id: `bt${i}a`, amount: (800 + rnd() * 5200).toFixed(2), effectiveDate: now - i * D, paymentType: 'RECEIPT' });
+    if (rnd() < 0.5) bankTransactions.push({ id: `bt${i}b`, amount: (300 + rnd() * 3900).toFixed(2), effectiveDate: now - i * D, paymentType: 'DISBURSEMENT' });
+    if (i % 30 === 27) bankTransactions.push({ id: `bt${i}g`, amount: '18400.00', effectiveDate: now - i * D, paymentType: 'DISBURSEMENT' }); // Gehälter
+  }
+
   // Verträge (wiederkehrende Abrechnung)
   const contracts = [
     ['501', [['800', 3, 29], ['804', 1, 99]]], ['502', [['800', 8, 29], ['804', 2, 99], ['806', 2, 49]]],
@@ -108,6 +154,9 @@ export function registerSales(r, { applyFilters, parties, tickets, documents, ar
   r.get('/salesOrder', list(salesOrders));
   r.get('/salesInvoice', list(salesInvoices));
   r.get('/contract', list(contracts));
+  r.get('/purchaseInvoice', list(purchaseInvoices));
+  r.get('/bankAccount', list(bankAccounts));
+  r.get('/bankTransaction', list(bankTransactions));
   r.get('/ticket/count', (req, res) => res.json({ result: applyFilters(tickets, req.query).length }));
   r.get('/party/id/:id', (req, res) => {
     const p = parties.find((x) => x.id === req.params.id);

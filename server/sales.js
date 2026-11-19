@@ -103,7 +103,7 @@ export async function customerFacts(token, partyId) {
   return { tickets, quotations, contracts };
 }
 
-function monthlyValue(contracts) {
+export function monthlyValue(contracts) {
   let total = 0;
   for (const c of contracts) {
     for (const it of c.contractItems || []) {
@@ -123,7 +123,7 @@ export async function dashboard(token, { userId }) {
   const sixMonthsAgo = monthStart(new Date(new Date().getFullYear(), new Date().getMonth() - 5, 1));
   const closed = await closedTicketStatusIds(token);
 
-  const [quotations, accepted, orders, intake, invoices, tickets, contracts, myTime] = await Promise.all([
+  const [quotations, accepted, orders, intake, tickets, contracts, myTime] = await Promise.all([
     section(get(token, '/quotation', {
       'status-in': JSON.stringify(OPEN_QUOTATION),
       properties: 'id,quotationNumber,customerId,quotationDate,validTo,netAmount,status,responsibleUserId',
@@ -138,10 +138,6 @@ export async function dashboard(token, { userId }) {
     section(get(token, '/salesOrder', {
       'orderDate-ge': sixMonthsAgo, properties: 'id,orderDate,netAmount,status', pageSize: 1000,
     })),
-    section(get(token, '/salesInvoice', {
-      'paid-eq': false, 'status-in': JSON.stringify(['DOCUMENT_CREATED', 'OPEN_ITEM_CREATED']),
-      properties: 'id,invoiceNumber,customerId,invoiceDate,dueDate,grossAmount,netAmount,paymentStatus,status', sort: 'dueDate', pageSize: 1000,
-    })),
     section(request(token, 'GET', '/ticket/count', {
       query: closed.length ? { 'ticketStatusId-notin': JSON.stringify(closed) } : {},
     }).then((d) => ({ open: Number(unwrap(d)) || 0 }))),
@@ -154,7 +150,6 @@ export async function dashboard(token, { userId }) {
   const out = { generatedAt: now, followUpDays: config.quotationFollowUpDays };
   const names = await partyNames(token, [
     ...(Array.isArray(quotations) ? quotations.map((q) => q.customerId) : []),
-    ...(Array.isArray(invoices) ? invoices.map((i) => i.customerId) : []),
   ]);
 
   if (Array.isArray(quotations)) {
@@ -192,21 +187,7 @@ export async function dashboard(token, { userId }) {
     out.intake = months.map(({ key, ...m }) => ({ ...m, net: Math.round(m.net) }));
   } else out.intake = intake;
 
-  if (Array.isArray(invoices)) {
-    const open = invoices.filter((i) => i.paymentStatus !== 'PAID');
-    const overdue = open.filter((i) => n(i.dueDate) && n(i.dueDate) < now);
-    out.invoices = {
-      openCount: open.length,
-      openGross: sum(open, 'grossAmount'),
-      overdueCount: overdue.length,
-      overdueGross: sum(overdue, 'grossAmount'),
-      list: overdue
-        .map((i) => ({ id: i.id, number: i.invoiceNumber, customer: names[i.customerId] || '', dueDate: n(i.dueDate), gross: n(i.grossAmount), daysOverdue: Math.floor((now - n(i.dueDate)) / 864e5) }))
-        .sort((a, b) => b.daysOverdue - a.daysOverdue)
-        .slice(0, 25),
-    };
-  } else out.invoices = invoices;
-
+  // Rechnungen gehören ins Finanz-Dashboard (nur Entra-Gruppe), nicht in den Vertrieb
   out.tickets = tickets;
   out.contracts = Array.isArray(contracts) ? { count: contracts.length, monthly: monthlyValue(contracts) } : contracts;
   out.myTime = Array.isArray(myTime)

@@ -58,6 +58,7 @@ async function showApp() {
   $('#view-app').hidden = false;
   $('#user-name').textContent = state.me.user.name;
   $('#demo-badge').hidden = !state.me.demo;
+  $('#nav-finance').hidden = !state.me.roles?.finance;
   if (!location.hash) location.hash = '#/start';
   route();
   refreshNavBadge();
@@ -93,12 +94,12 @@ function route() {
   pageTimer = null;
   const [, page = 'start', id] = location.hash.split('/');
   $$('.side-nav a').forEach((a) => {
-    if (a.dataset.nav === page || (page === 'zuordnung' && a.dataset.nav === 'kunden')) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+    if (a.dataset.nav === page || (page === 'zuordnung' && a.dataset.nav === 'kunden') || (page === 'dashboard' && a.dataset.nav === 'vertrieb')) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
   });
   content.classList.toggle('flush', page === 'zeiten');
   content.classList.remove('board-host');
   if (page !== 'angebot') leaveBoard();
-  const pages = { start: renderStart, kunden: id ? () => renderCustomer(id) : renderCustomers, zuordnung: renderCustomerMap, dashboard: renderDashboard, angebot: renderOffer, zeiten: renderTime };
+  const pages = { start: renderStart, kunden: id ? () => renderCustomer(id) : renderCustomers, zuordnung: renderCustomerMap, vertrieb: renderDashboard, dashboard: renderDashboard, finanzen: renderFinance, angebot: renderOffer, zeiten: renderTime };
   (pages[page] || renderStart)();
   window.scrollTo(0, 0);
 }
@@ -121,6 +122,7 @@ setInterval(() => { if (state.me) refreshNavBadge(); }, 120000);
 // Startseite
 // =====================================================================
 const ICON = {
+  finanzen: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="6" width="20" height="13" rx="2"/><path d="M2 10h20M6 15h4"/></svg>',
   kunden: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>',
   vertrieb: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>',
   angebot: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M8 17c1.5-2 3-2 4 0s2.5 1 4-1"/></svg>',
@@ -141,12 +143,14 @@ async function renderStart() {
       <section class="card"><div class="card-head"><h2>Schnellzugriff</h2></div><div class="quick" id="quick"></div></section>
     </div>`;
   // Alles parallel laden; jeder Bereich zeichnet sich, sobald seine Daten da sind
-  const [ov, dash, hist, drafts, timers, cmap] = await Promise.allSettled([
+  const fin = state.me?.roles?.finance;
+  const [ov, dash, hist, drafts, timers, cmap, finR] = await Promise.allSettled([
     api('/atera/overview'), api('/dashboard'), api('/offer/history'), api('/offer/drafts'), api('/timers'), api('/customer-map'),
+    fin ? api('/finance') : Promise.resolve(null),
   ]);
   if (stale(seq)) return;
   const val = (r) => (r.status === 'fulfilled' ? r.value : null);
-  const o = val(ov), d = val(dash), hi = val(hist)?.offers || [], dr = val(drafts)?.drafts || [], ti = val(timers), cm = val(cmap);
+  const o = val(ov), d = val(dash), hi = val(hist)?.offers || [], dr = val(drafts)?.drafts || [], ti = val(timers), cm = val(cmap), f = val(finR);
 
   // --- Bereichskarten
   const card = (k, href, title, big, bigLabel, lines, cls = '') => `<a class="area-card ${cls}" href="${href}" data-area="${k}">
@@ -161,9 +165,12 @@ async function renderStart() {
       [`${warn.length} mit Warnung · ${cust.length - crit.length - warn.length} ohne Befund`, srvDown || fwDown ? `${plural(srvDown, 'Server', 'Server')} offline · ${plural(fwDown, 'Firewall', 'Firewalls')} nicht erreichbar` : 'Alle Server und Firewalls erreichbar', `Stand ${ago(o.updatedAt)}`],
       crit.length ? 'crit' : warn.length ? 'warn' : 'ok')
       : card('kunden', '#/kunden', 'Kunden &amp; Geräte', '–', 'Atera nicht erreichbar', [esc(ov.reason?.message || '')]),
-    d ? card('vertrieb', '#/dashboard', 'Vertrieb &amp; Finanzen', d.quotations?.error ? '–' : eur0(d.quotations.net), d.quotations?.error ? 'Angebote: keine Berechtigung' : `in ${plural(d.quotations.count, 'offenem Angebot', 'offenen Angeboten')}`,
-      [!d.quotations?.error && d.quotations.followUpCount ? `${d.quotations.followUpCount} zum Nachfassen` : null, d.invoices?.error ? null : `${eur0(d.invoices.overdueGross)} überfällig (${plural(d.invoices.overdueCount, 'Rechnung', 'Rechnungen')})`, d.accepted?.error ? null : `${eur0(d.accepted.net)} diesen Monat angenommen`])
-      : card('vertrieb', '#/dashboard', 'Vertrieb &amp; Finanzen', '–', 'weclapp nicht erreichbar', []),
+    d ? card('vertrieb', '#/vertrieb', 'Vertrieb', d.quotations?.error ? '–' : eur0(d.quotations.net), d.quotations?.error ? 'Angebote: keine Berechtigung' : `in ${plural(d.quotations.count, 'offenem Angebot', 'offenen Angeboten')}`,
+      [!d.quotations?.error && d.quotations.followUpCount ? `${d.quotations.followUpCount} zum Nachfassen` : null, d.accepted?.error ? null : `${eur0(d.accepted.net)} diesen Monat angenommen`, d.contracts?.error ? null : `${eur0(d.contracts.monthly)} Managed Services / Monat`])
+      : card('vertrieb', '#/vertrieb', 'Vertrieb', '–', 'weclapp nicht erreichbar', []),
+    ...(fin ? [f ? card('finanzen', '#/finanzen', 'Finanzen', f.bank?.error ? '–' : eur0(f.bank.balance), f.bank?.error ? 'Kontostand nicht verfügbar' : 'Kontostand gesamt',
+      [f.receivables?.error ? null : `${eur0(f.receivables.overdue)} Forderungen überfällig`, f.payables?.error ? null : `${eur0(f.payables.due7)} Eingangsrechnungen in 7 Tagen fällig`, f.revenue?.error ? null : `${eur0(f.revenue.ytd)} Umsatz seit Jahresbeginn`])
+      : card('finanzen', '#/finanzen', 'Finanzen', '–', 'Finanzdaten nicht verfügbar', [])] : []),
     card('angebot', '#/angebot', 'Angebotsboard', plural(hi.filter((x) => new Date(x.signedAt).getMonth() === new Date().getMonth() && new Date(x.signedAt).getFullYear() === new Date().getFullYear()).length, 'Auftrag', 'Aufträge'), 'diesen Monat unterschrieben',
       [hi[0] ? `Zuletzt: ${esc(hi[0].customer.company || hi[0].customer.name || '')} (${date(hi[0].signedAt)})` : 'Noch kein Auftrag über das Board', dr.length ? `${plural(dr.length, 'gespeicherter Kundenstand', 'gespeicherte Kundenstände')}` : null]),
     (() => {
@@ -179,9 +186,9 @@ async function renderStart() {
   // --- Braucht Aufmerksamkeit
   const items = [];
   for (const c of crit.slice(0, 6)) items.push({ sev: 'critical', tag: 'Kunde', text: `${c.name}: ${c.headline || 'kritisch'}`, href: `#/kunden/${encodeURIComponent(c.id)}` });
-  for (const x of hi.filter((x) => !x.weclapp?.quotationNumber).slice(0, 3)) items.push({ sev: 'neutral', tag: 'Auftrag', text: `${x.customer.company || x.customer.name}: unterschrieben, aber noch nicht in weclapp`, href: '#/dashboard' });
-  if (d && !d.invoices?.error) for (const i of d.invoices.list.slice(0, 3)) items.push({ sev: 'neutral', tag: 'Rechnung', text: `${i.number} ${i.customer}: ${eur(i.gross)} seit ${i.daysOverdue} Tagen fällig`, href: '#/dashboard' });
-  if (d && !d.quotations?.error) for (const q of d.quotations.list.filter((q) => q.ageDays >= d.followUpDays).slice(0, 3)) items.push({ sev: 'neutral', tag: 'Angebot', text: `${q.number} ${q.customer}: ${eur(q.net)}, ${q.ageDays} Tage offen`, href: '#/dashboard' });
+  for (const x of hi.filter((x) => !x.weclapp?.quotationNumber).slice(0, 3)) items.push({ sev: 'neutral', tag: 'Auftrag', text: `${x.customer.company || x.customer.name}: unterschrieben, aber noch nicht in weclapp`, href: '#/vertrieb' });
+  if (f && !f.receivables?.error) for (const i of f.receivables.list.slice(0, 3)) items.push({ sev: 'neutral', tag: 'Rechnung', text: `${i.number} ${i.customer}: ${eur(i.amount)} seit ${i.days} Tagen fällig`, href: '#/finanzen' });
+  if (d && !d.quotations?.error) for (const q of d.quotations.list.filter((q) => q.ageDays >= d.followUpDays).slice(0, 3)) items.push({ sev: 'neutral', tag: 'Angebot', text: `${q.number} ${q.customer}: ${eur(q.net)}, ${q.ageDays} Tage offen`, href: '#/vertrieb' });
   for (const c of warn.slice(0, Math.max(0, 8 - items.length))) items.push({ sev: 'warning', tag: 'Kunde', text: `${c.name}: ${c.headline || 'Warnung'}`, href: `#/kunden/${encodeURIComponent(c.id)}` });
   $('#att-count').textContent = items.length ? plural(items.length, 'Punkt', 'Punkte') : '';
   $('#attention').innerHTML = items.length
@@ -194,7 +201,8 @@ async function renderStart() {
     ['#/angebot', 'Neues Angebot', 'Am Tablet beim Kunden kalkulieren und unterschreiben'],
     ['#/kunden', 'Kundenübersicht', 'Server und Firewalls aller Kunden'],
     ['#/zeiten', 'Zeit erfassen', 'Timer auf ein weclapp-Ticket starten'],
-    ['#/dashboard', 'Vertrieb & Finanzen', 'Angebote, Aufträge, Rechnungen'],
+    ['#/vertrieb', 'Vertrieb', 'Angebote, Pipeline, Auftragseingang'],
+    ...(fin ? [['#/finanzen', 'Finanzen', 'Liquidität, Forderungen, Umsatz – nur Geschäftsführung/Buchhaltung']] : []),
     ['#/zuordnung', 'Kundenzuordnung', openMap ? `${plural(openMap, 'Kunde', 'Kunden')} noch ohne weclapp-Verknüpfung` : 'Atera-Kunden mit weclapp verknüpfen'],
   ];
   $('#quick').innerHTML = quick.map(([href, t, sub]) => `<a class="quick-item" href="${href}"><b>${esc(t)}</b><span>${esc(sub)}</span></a>`).join('');
@@ -566,7 +574,7 @@ async function setCustomerMap(ateraId, partyId) {
 }
 
 // =====================================================================
-// Vertrieb & Finanzen (weclapp)
+// Vertrieb (weclapp) – Rechnungen und Zahlungen nur unter Finanzen
 // =====================================================================
 async function renderDashboard() {
   const seq = navSeq;
@@ -583,11 +591,11 @@ async function renderDashboard() {
   const err = (s) => s && s.error;
   const v = (s, f) => (err(s) ? '–' : f(s));
   const errSub = (s) => (err(s) ? `<div class="sub">${esc(s.error)}</div>` : '');
-  const q = d.quotations, inv = d.invoices;
+  const q = d.quotations;
   const maxIntake = Array.isArray(d.intake) ? Math.max(...d.intake.map((m) => m.net), 1) : 1;
   content.innerHTML = `
     <div class="page-head">
-      <div><div class="eyebrow">weclapp · Vertrieb &amp; Finanzen</div><h1>Dashboard</h1></div>
+      <div><div class="eyebrow">weclapp · Angebote, Pipeline, Aufträge</div><h1>Vertrieb</h1></div>
       <div class="page-actions"><span class="stamp">Stand: ${dateTime(d.generatedAt)}</span><a class="btn primary" href="#/angebot">Neues Angebot am Tablet</a></div>
     </div>
     <section class="kpis">
@@ -596,7 +604,6 @@ async function renderDashboard() {
       <div class="kpi"><div class="label">Angenommen diesen Monat</div><div class="value">${v(d.accepted, (x) => eur0(x.net))}</div><div class="sub">${v(d.accepted, (x) => plural(x.count, 'Angebot', 'Angebote'))}</div>${errSub(d.accepted)}</div>
       <div class="kpi"><div class="label">Managed Services / Monat</div><div class="value">${v(d.contracts, (x) => eur0(x.monthly))}</div><div class="sub">${v(d.contracts, (x) => plural(x.count, 'aktiver Vertrag', 'aktive Verträge'))}</div>${errSub(d.contracts)}</div>
       <div class="kpi"><div class="label">Offene Aufträge</div><div class="value">${v(d.orders, (x) => eur0(x.net))}</div><div class="sub">${v(d.orders, (x) => plural(x.count, 'Auftrag', 'Aufträge'))}</div>${errSub(d.orders)}</div>
-      <div class="kpi"><div class="label">Überfällige Rechnungen</div><div class="value">${v(inv, (x) => eur0(x.overdueGross))}</div><div class="sub">${v(inv, (x) => `${plural(x.overdueCount, 'Rechnung', 'Rechnungen')} · offen gesamt ${eur0(x.openGross)}`)}</div>${errSub(inv)}</div>
       <div class="kpi"><div class="label">Offene Tickets</div><div class="value">${v(d.tickets, (x) => x.open)}</div>${errSub(d.tickets)}</div>
       <div class="kpi"><div class="label">Meine Zeit diesen Monat</div><div class="value">${v(d.myTime, (x) => hm(x.minutes))}</div><div class="sub">${v(d.myTime, (x) => `davon verrechenbar ${hm(x.billableMinutes)}`)}</div>${errSub(d.myTime)}</div>
     </section>
@@ -622,8 +629,8 @@ async function renderDashboard() {
         ${err(q) ? `<p class="empty">${esc(q.error)}</p>` : q.list.length ? `<div class="table-wrap"><table><thead><tr><th>Nr.</th><th>Kunde</th><th>Alter</th><th class="num">Netto</th></tr></thead><tbody>${q.list.map((x) => `<tr><td class="muted">${esc(x.number)}</td><td class="wrap">${esc(x.customer)}</td><td>${x.ageDays >= d.followUpDays ? chip('neutral', `${x.ageDays} Tage`) : `<span class="muted">${x.ageDays} Tage</span>`}</td><td class="num">${eur(x.net)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="empty">Keine offenen Angebote.</p>'}
       </div>
       <div class="card">
-        <div class="card-head"><h2>Überfällige Rechnungen</h2><span class="muted small">brutto</span></div>
-        ${err(inv) ? `<p class="empty">${esc(inv.error)}</p>` : inv.list.length ? `<div class="table-wrap"><table><thead><tr><th>Nr.</th><th>Kunde</th><th>Fällig seit</th><th class="num">Betrag</th></tr></thead><tbody>${inv.list.map((x) => `<tr><td class="muted">${esc(x.number)}</td><td class="wrap">${esc(x.customer)}</td><td>${chip('neutral', `${x.daysOverdue} Tage`)}</td><td class="num">${eur(x.gross)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="empty">Keine überfälligen Rechnungen.</p>'}
+        <div class="card-head"><h2>Größte offene Angebote</h2><span class="muted small">netto</span></div>
+        ${err(q) ? `<p class="empty">${esc(q.error)}</p>` : q.list.length ? `<div class="table-wrap"><table><thead><tr><th>Nr.</th><th>Kunde</th><th>Datum</th><th class="num">Netto</th></tr></thead><tbody>${[...q.list].sort((a, b) => b.net - a.net).slice(0, 8).map((x) => `<tr><td class="muted">${esc(x.number)}</td><td class="wrap">${esc(x.customer)}</td><td>${date(x.date)}</td><td class="num">${eur(x.net)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="empty">Keine offenen Angebote.</p>'}
       </div>
     </div>
   `;
@@ -631,6 +638,90 @@ async function renderDashboard() {
     b.disabled = true;
     try { const r = await api(`/offer/${encodeURIComponent(b.dataset.retry)}/retry`, { method: 'POST' }); toast(r.weclapp?.quotationNumber ? `In weclapp angelegt: Angebot ${r.weclapp.quotationNumber}` : 'weclapp hat wieder nicht angenommen'); renderDashboard(); } catch (e) { toast(e.message, true); b.disabled = false; }
   }));
+}
+
+// =====================================================================
+// Finanzen – Geschäftsführung & Buchhaltung (nur Entra-Gruppe)
+// =====================================================================
+function lineChart(points, h = 160) {
+  if (!points?.length) return '<p class="empty">Keine Buchungen.</p>';
+  const w = 600, pad = 6, vals = points.map((p) => p.balance);
+  const lo = Math.min(...vals), hi = Math.max(...vals), span = Math.max(hi - lo, 1);
+  const min = lo - span * 0.08, max = hi + span * 0.08; // auf den tatsächlichen Bereich skalieren
+  const x = (i) => pad + (i / (points.length - 1)) * (w - 2 * pad);
+  const y = (v) => pad + (1 - (v - min) / (max - min || 1)) * (h - 2 * pad);
+  const d = points.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(p.balance).toFixed(1)}`).join(' ');
+  const zero = min < 0 && max > 0 ? `<line x1="0" x2="${w}" y1="${y(0)}" y2="${y(0)}" class="lc-zero"/>` : '';
+  return `<svg class="linechart" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" role="img" aria-label="Kontostand der letzten 90 Tage">${zero}<path d="${d} L${x(points.length - 1)},${h} L${x(0)},${h} Z" class="lc-area"/><path d="${d}" class="lc-line"/></svg>
+    <div class="lc-axis"><span>${date(points[0].date)}</span><span>min ${eur0(lo)} · max ${eur0(hi)}</span><span>heute</span></div>`;
+}
+function pairChart(months, label) {
+  const max = Math.max(1, ...months.flatMap((m) => [m.current, m.previous]));
+  return `<div class="pairchart" role="img" aria-label="${esc(label)}">${months.map((m) => `<div class="pc-col ${m.future ? 'future' : ''}" title="${esc(m.month)}: ${eur0(m.current)} (Vorjahr ${eur0(m.previous)})">
+    <div class="pc-bars"><i class="prev" style="height:${Math.max(0, (m.previous / max) * 100)}%"></i><i class="cur" style="height:${Math.max(0, (m.current / max) * 100)}%"></i></div><span>${esc(m.month)}</span></div>`).join('')}</div>
+    <div class="pc-legend"><span><i class="cur"></i>${new Date().getFullYear()}</span><span><i class="prev"></i>${new Date().getFullYear() - 1}</span></div>`;
+}
+const pct = (a, b) => (b ? `${a >= b ? '+' : '−'}${Math.abs(Math.round(((a - b) / Math.abs(b)) * 100))} % zum Vorjahr` : 'kein Vorjahreswert');
+
+async function renderFinance() {
+  const seq = navSeq;
+  if (!state.me?.roles?.finance) {
+    content.innerHTML = '<div class="banner info"><div><b>Kein Zugriff auf Finanzen</b>Dieser Bereich ist der Geschäftsführung und Buchhaltung vorbehalten (Entra-Gruppe „SIT-Cockpit Finanzen“).</div></div>';
+    return;
+  }
+  content.innerHTML = '<p class="loading">Lade Finanzdaten aus weclapp …</p>';
+  let f;
+  try { f = await api('/finance'); } catch (e) {
+    if (stale(seq)) return;
+    content.innerHTML = `<div class="banner crit"><div><b>Finanzdaten nicht verfügbar</b>${esc(e.message)}</div></div>`;
+    return;
+  }
+  if (stale(seq)) return;
+  const err = (s) => s && s.error;
+  const v = (s, fn) => (err(s) || !s ? '–' : fn(s));
+  const errSub = (s) => (err(s) ? `<div class="sub">${esc(s.error)}</div>` : '');
+  const b = f.bank, r = f.receivables, p = f.payables;
+  const lastSync = !err(b) && b.accounts.length ? Math.min(...b.accounts.map((a) => a.lastSync || Infinity)) : null;
+  content.innerHTML = `
+    <div class="page-head"><div><div class="eyebrow">Geschäftsführung &amp; Buchhaltung · nur Gruppe Finanzen</div><h1>Finanzen</h1></div>
+      <div class="page-actions"><span class="stamp">Stand: ${dateTime(f.generatedAt)}</span></div></div>
+    ${!err(b) && (b.stale || b.accounts.some((a) => a.failure)) ? `<div class="banner warn"><div><b>Bankdaten nicht aktuell</b>${b.accounts.some((a) => a.failure) ? 'Bei mindestens einem Konto meldet weclapp einen Verbindungsfehler. ' : ''}Letzte Synchronisation ${lastSync && lastSync !== Infinity ? dateTime(lastSync) : 'unbekannt'} – Kontostände in weclapp aktualisieren.</div></div>` : ''}
+    <section class="kpis">
+      <div class="kpi"><div class="label">Kontostand gesamt</div><div class="value">${v(b, (x) => eur0(x.balance))}</div><div class="sub">${v(b, (x) => `${plural(x.accounts.length, 'Konto', 'Konten')}${x.creditLine ? ` · Rahmen ${eur0(x.creditLine)}` : ''}`)}</div>${errSub(b)}</div>
+      <div class="kpi"><div class="label">Forderungen offen</div><div class="value">${v(r, (x) => eur0(x.total))}</div><div class="sub">${v(r, (x) => `davon überfällig ${eur0(x.overdue)}`)}</div>${errSub(r)}</div>
+      <div class="kpi"><div class="label">Eingangsrechnungen offen</div><div class="value">${v(p, (x) => eur0(x.total))}</div><div class="sub">${v(p, (x) => `${eur0(x.due7)} in 7 Tagen · ${eur0(x.overdue)} überfällig`)}</div>${errSub(p)}</div>
+      <div class="kpi"><div class="label">Umsatz seit Jahresbeginn</div><div class="value">${v(f.revenue, (x) => eur0(x.ytd))}</div><div class="sub">${v(f.revenue, (x) => pct(x.ytd, x.ytdPrev))}</div>${errSub(f.revenue)}</div>
+      <div class="kpi"><div class="label">Ergebnis-Näherung YTD</div><div class="value">${f.result ? eur0(f.result.ytd) : '–'}</div><div class="sub">${f.result ? `Umsatz − Eingangsrechnungen · Vorjahr ${eur0(f.result.ytdPrev)}` : ''}</div></div>
+      <div class="kpi"><div class="label">USt-Zahllast ${f.vat ? esc(f.vat.monthLabel) : ''}</div><div class="value">${f.vat ? eur0(f.vat.month) : '–'}</div><div class="sub">${f.vat ? `${esc(f.vat.prevMonthLabel)}: ${eur0(f.vat.prevMonth)} · vorläufig` : ''}</div></div>
+      <div class="kpi"><div class="label">Managed Services / Monat</div><div class="value">${v(f.mrr, (x) => eur0(x.monthly))}</div><div class="sub">${v(f.mrr, (x) => plural(x.count, 'aktiver Vertrag', 'aktive Verträge'))}</div>${errSub(f.mrr)}</div>
+    </section>
+    <div class="grid-2">
+      <div class="card"><div class="card-head"><h2>Liquidität</h2><span class="muted small">Kontostand der letzten 90 Tage</span></div>
+        ${err(b) ? `<p class="empty">${esc(b.error)}</p>` : `${b.trend ? lineChart(b.trend) : `<p class="empty">${esc(b.trendError || 'Kein Verlauf')}</p>`}
+        ${b.in90 != null ? `<p class="muted small" style="margin:6px 0 0">90 Tage: Eingänge ${eur0(b.in90)} · Ausgänge ${eur0(b.out90)}</p>` : ''}
+        <table style="margin-top:12px"><tbody>${b.accounts.map((a) => `<tr><td class="wrap"><b>${esc(a.name)}</b> <span class="muted small">${esc(a.iban)}</span>${a.failure ? ' <span class="chip neutral">Verbindungsfehler</span>' : ''}<div class="muted small">Sync ${a.lastSync ? dateTime(a.lastSync) : '–'}</div></td><td class="num">${eur(a.balance)}</td></tr>`).join('')}</tbody></table>`}
+      </div>
+      <div class="card"><div class="card-head"><h2>Liquiditätsvorschau</h2><span class="muted small">ohne Gehälter, Miete u. ä.</span></div>
+        ${f.forecast ? `<table><thead><tr><th>Zeitraum</th><th class="num">Eingänge</th><th class="num">Ausgänge</th><th class="num">Kontostand</th></tr></thead><tbody>${f.forecast.map((x) => `<tr><td>in ${x.days} Tagen</td><td class="num">+${eur0(x.inflow)}</td><td class="num">−${eur0(x.outflow)}</td><td class="num"><b>${eur0(x.balance)}</b></td></tr>`).join('')}</tbody></table>
+        <p class="muted small">Kontostand heute + fällige Forderungen (bis 90 Tage überfällig) − fällige Eingangsrechnungen.</p>` : '<p class="empty">Vorschau braucht Bank, Forderungen und Eingangsrechnungen.</p>'}
+        <h3 style="margin-top:16px">Forderungen nach Alter</h3>
+        ${err(r) ? `<p class="empty">${esc(r.error)}</p>` : `<div class="aging">${r.buckets.map((x) => { const max = Math.max(1, ...r.buckets.map((y) => Math.abs(y.amount))); return `<div class="ag-row"><span>${esc(x.label)}</span><span class="ag-bar"><i style="width:${(Math.abs(x.amount) / max) * 100}%"></i></span><span class="num">${eur0(x.amount)}</span></div>`; }).join('')}</div>`}
+      </div>
+    </div>
+    <div class="grid-2" style="margin-top:18px">
+      <div class="card"><div class="card-head"><h2>Umsatz je Monat</h2><span class="muted small">netto, Ausgangsrechnungen</span></div>${err(f.revenue) ? `<p class="empty">${esc(f.revenue.error)}</p>` : pairChart(f.revenue.months, 'Umsatz je Monat')}</div>
+      <div class="card"><div class="card-head"><h2>Eingangsrechnungen je Monat</h2><span class="muted small">netto</span></div>${err(f.costs) ? `<p class="empty">${esc(f.costs.error)}</p>` : pairChart(f.costs.months, 'Eingangsrechnungen je Monat')}</div>
+    </div>
+    <div class="grid-2" style="margin-top:18px">
+      <div class="card"><div class="card-head"><h2>Überfällige Forderungen</h2><span class="muted small">brutto</span></div>
+        ${err(r) ? `<p class="empty">${esc(r.error)}</p>` : `${r.topDebtors.length ? `<p class="muted small" style="margin:0 0 8px">Größte Schuldner: ${r.topDebtors.map((x) => `${esc(x.customer)} ${eur0(x.amount)}`).join(' · ')}</p>` : ''}
+        ${r.list.length ? `<div class="table-wrap"><table><thead><tr><th>Nr.</th><th>Kunde</th><th>Fällig seit</th><th class="num">Betrag</th></tr></thead><tbody>${r.list.map((x) => `<tr><td class="muted">${esc(x.number)}</td><td class="wrap">${esc(x.customer)}</td><td>${chip('neutral', `${x.days} Tage`)}</td><td class="num">${eur(x.amount)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="empty">Keine überfälligen Forderungen.</p>'}`}
+      </div>
+      <div class="card"><div class="card-head"><h2>Fällige Eingangsrechnungen</h2><span class="muted small">nach Fälligkeit</span></div>
+        ${err(p) ? `<p class="empty">${esc(p.error)}</p>` : p.list.length ? `${p.blocked ? `<p class="muted small" style="margin:0 0 8px">${plural(p.blocked, 'Rechnung mit Zahlungssperre', 'Rechnungen mit Zahlungssperre')}</p>` : ''}<div class="table-wrap"><table><thead><tr><th>Nr.</th><th>Lieferant</th><th>Fällig</th><th class="num">Betrag</th></tr></thead><tbody>${p.list.map((x) => `<tr><td class="muted">${esc(x.number || '')}</td><td class="wrap">${esc(x.supplier)}${x.blocked ? ' <span class="chip neutral">gesperrt</span>' : ''}</td><td>${x.days < 0 ? chip('neutral', `seit ${-x.days} Tagen`) : x.days === 0 ? 'heute' : `in ${x.days} Tagen`}</td><td class="num">${eur(x.amount)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="empty">Keine offenen Eingangsrechnungen.</p>'}
+      </div>
+    </div>
+    <div class="card" style="margin-top:18px"><h3>Hinweise zur Berechnung</h3><ul class="muted small" style="margin:6px 0 0;padding-left:18px">${f.notes.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>`;
 }
 
 // =====================================================================

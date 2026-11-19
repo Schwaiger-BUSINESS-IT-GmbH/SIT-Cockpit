@@ -8,6 +8,8 @@ import * as sales from './sales.js';
 import * as offers from './offers.js';
 import * as tickets from './tickets.js';
 import * as custmap from './customermap.js';
+import * as finance from './finance.js';
+import { roles, requireFinance } from './access.js';
 import { registerTimeRoutes } from './time-routes.js';
 import { getStored, saveStored, removeStored } from './tokens.js';
 import { setSession, clearSession, requireSession, entraPrincipal, requireEntraIfConfigured } from './session.js';
@@ -92,6 +94,7 @@ api.get('/me', (req, res) => {
     tokenStored: !!getStored(req.session.entraId),
     version: VERSION,
     demo: config.demo,
+    roles: roles(req),
     links: { weclapp: config.weclappWebUrl, atera: config.ateraWebUrl, terms: config.termsUrl },
   });
 });
@@ -122,6 +125,9 @@ api.put('/customer-map/:ateraId', h(async (req, res) => res.json(await custmap.s
 api.get('/atera-tickets/meta', h(async (req, res) => res.json(await tickets.ticketMeta(req.session.token, req.session.userId))));
 api.get('/atera-tickets/similar', h(async (req, res) => res.json({ tickets: await tickets.similarTickets(req.session.token, req.query.partyId, req.query.device) })));
 api.post('/atera-tickets', h(async (req, res) => res.json(await tickets.createTicket(req.session.token, req.body || {}, req.session))));
+
+// ---------- Finanzen (nur Entra-Gruppe, serverseitig geprüft) ----------
+api.get('/finance', requireFinance, h(async (req, res) => res.json(await finance.financeDashboard(req.session.token))));
 
 // ---------- weclapp-Dashboard ----------
 api.get('/dashboard', h(async (req, res) => {

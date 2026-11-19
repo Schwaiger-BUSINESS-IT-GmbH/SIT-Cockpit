@@ -41,6 +41,9 @@ export const config = {
   companyAddress: process.env.COMPANY_ADDRESS || '',
   termsUrl: process.env.TERMS_URL || 'https://www.schwaiger-it.at/agb',
   vatPercent: num(process.env.VAT_PERCENT, 20),
+  // ---------- Finanzen (nur Entra-Gruppe) ----------
+  financeGroupId: process.env.FINANCE_GROUP_ID || '',
+  financeLocal: process.env.FINANCE_LOCAL === '1', // nur lokale Entwicklung ohne Microsoft-Login
   // ---------- Dashboard ----------
   quotationFollowUpDays: num(process.env.QUOTATION_FOLLOWUP_DAYS, 14),
   // ---------- SIT-Time (Zeiten) ----------
