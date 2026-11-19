@@ -52,33 +52,49 @@ if ($authAppId) {
   Write-Host 'Entra-App nicht gefunden - Redirect-URI bitte manuell ergaenzen.' -ForegroundColor Yellow
 }
 
-# Sucht ein vorhandenes Zertifikat fuer den Hostnamen (Filter in PowerShell statt JMESPath - cmd.exe-sicher)
-function FindThumb {
-  $certs = @(AzOk webapp config ssl list -g $ResourceGroup -o json | ConvertFrom-Json)
-  $c = $certs | Where-Object { $_.subjectName -eq $Hostname -or ($_.hostNames -contains $Hostname) } | Select-Object -First 1
-  if ($c) { return $c.thumbprint } else { return $null }
-}
+# Kostenloses App-Service-Zertifikat (DigiCert/GeoTrust).
+# Erfahrungen aus der Einrichtung von cockpit.schwaiger-it.at:
+#  - Die CAA-Eintraege der Hauptdomain muessen "digicert.com" erlauben, sonst haengt die Ausstellung
+#    ohne Fehlermeldung (schwaiger-it.at: CAA 0 issue "digicert.com" ergaenzt).
+#  - Waehrend der Ausstellung "Nur HTTPS" kurz ausschalten (Pruefung laeuft ueber HTTP).
+#  - Eine haengende Anforderung blockiert neue unter demselben Ressourcennamen -> eigener Name.
+#  - "az webapp config ssl bind" stuerzt mit einem CLI-Fehler ab -> Bindung per REST.
+$sub = AzOk account show --query id -o tsv
+$plan = AzOk webapp show -g $ResourceGroup -n $AppName --query appServicePlanId -o tsv
+$certName = ($Hostname -replace '\.', '-') + '-managed'
+$certUri = "https://management.azure.com/subscriptions/$sub/resourceGroups/$ResourceGroup/providers/Microsoft.Web/certificates/${certName}?api-version=2023-01-01"
+function Token { AzOk account get-access-token --resource 'https://management.azure.com/' --query accessToken -o tsv }
 
-Step 'Kostenloses App-Service-Managed-Zertifikat erstellen'
-$thumb = FindThumb
-if ($thumb) {
-  Write-Host "Zertifikat existiert bereits ($thumb)."
-} else {
-  # Wird bei neueren az-Versionen asynchron erstellt -> danach warten
-  & az webapp config ssl create -g $ResourceGroup -n $AppName --hostname $Hostname -o none
-  Write-Host 'Warte, bis Azure das Zertifikat ausgestellt hat (meist 1-5 Minuten)...'
-  for ($i = 0; $i -lt 60 -and -not $thumb; $i++) {
-    Start-Sleep -Seconds 10
-    $thumb = FindThumb
-    if (-not $thumb) { Write-Host '.' -NoNewline }
+Step 'Kostenloses App-Service-Managed-Zertifikat'
+$c = Invoke-WebRequest -Uri $certUri -Headers @{ Authorization = "Bearer $(Token)" } -SkipHttpErrorCheck
+$thumb = if ($c.StatusCode -eq 200) { ([string]$c.Content | ConvertFrom-Json).properties.thumbprint } else { $null }
+if ($thumb) { Write-Host "Zertifikat existiert bereits ($thumb)." }
+else {
+  AzOk webapp update -g $ResourceGroup -n $AppName --https-only false -o none
+  try {
+    $body = @{ location = (AzOk webapp show -g $ResourceGroup -n $AppName --query location -o tsv); properties = @{ canonicalName = $Hostname; serverFarmId = $plan } } | ConvertTo-Json -Depth 5
+    $r = Invoke-WebRequest -Method Put -Uri $certUri -Headers @{ Authorization = "Bearer $(Token)" } -ContentType 'application/json' -Body $body -SkipHttpErrorCheck
+    if ($r.StatusCode -ge 400) { throw "Zertifikat-Anforderung abgelehnt: HTTP $($r.StatusCode) $([string]$r.Content)" }
+    Write-Host 'Warte, bis Azure das Zertifikat ausgestellt hat (meist 2-5 Minuten)...'
+    for ($i = 0; $i -lt 60 -and -not $thumb; $i++) {
+      Start-Sleep -Seconds 15
+      $c = Invoke-WebRequest -Uri $certUri -Headers @{ Authorization = "Bearer $(Token)" } -SkipHttpErrorCheck
+      if ($c.StatusCode -eq 200) { $thumb = ([string]$c.Content | ConvertFrom-Json).properties.thumbprint }
+      if (-not $thumb) { Write-Host '.' -NoNewline }
+    }
+    Write-Host ''
+  } finally {
+    AzOk webapp update -g $ResourceGroup -n $AppName --https-only true -o none
   }
-  Write-Host ''
-  if (-not $thumb) { throw 'Zertifikat nach 10 Minuten noch nicht fertig - Skript spaeter mit -Bind erneut starten.' }
+  if (-not $thumb) { throw 'Kein Zertifikat nach 15 Minuten - CAA-Eintraege pruefen (digicert.com erlaubt?) und spaeter erneut mit -Bind starten.' }
   Write-Host "Zertifikat ausgestellt ($thumb)."
 }
 
 Step 'Zertifikat binden (SNI)'
-AzOk webapp config ssl bind -g $ResourceGroup -n $AppName --certificate-thumbprint $thumb --ssl-type SNI -o none
+$bindUri = "https://management.azure.com/subscriptions/$sub/resourceGroups/$ResourceGroup/providers/Microsoft.Web/sites/$AppName/hostNameBindings/${Hostname}?api-version=2023-01-01"
+$bind = @{ properties = @{ siteName = $AppName; hostNameType = 'Verified'; sslState = 'SniEnabled'; thumbprint = $thumb } } | ConvertTo-Json -Depth 5
+$r = Invoke-WebRequest -Method Put -Uri $bindUri -Headers @{ Authorization = "Bearer $(Token)" } -ContentType 'application/json' -Body $bind -SkipHttpErrorCheck
+if ($r.StatusCode -ge 400) { throw "Bindung fehlgeschlagen: HTTP $($r.StatusCode) $([string]$r.Content)" }
 
 Step 'Fertig'
 Write-Host "SIT-Cockpit ist erreichbar unter https://$Hostname"

@@ -101,6 +101,8 @@ Gleiche Architektur wie SIT-Time: Azure App Service (Linux, Node 22) + Microsoft
 .\infra\2-custom-domain.ps1 -Hostname cockpit.schwaiger-it.at -Bind    # nach DNS-Eintrag
 ```
 
+**Live:** https://cockpit.schwaiger-it.at (Web-App `sit-cockpit-schwaiger` auf dem SIT-Time-Plan in `rg-sit-time`, Microsoft-Login davor). Für das kostenlose Zertifikat muss die CAA-Liste von `schwaiger-it.at` **`digicert.com`** erlauben (bei A1 ergänzt).
+
 Jeder Push auf `main` deployt danach automatisch. Daten (Tokens, Timer, unterschriebene Vorgänge) liegen unter `/home/data`. **Nur eine Instanz betreiben** (Dateispeicher).
 
 Alternativ Docker: `docker compose up -d --build`.
