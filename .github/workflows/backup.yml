@@ -43,6 +43,17 @@ jobs:
             code=$(curl -sS -o "$file" -w '%{http_code}' -H "Authorization: Bearer $token" \
               "https://$app.scm.azurewebsites.net/api/zip/data/")
             if [ "$code" != "200" ]; then echo "::error::$app: Download fehlgeschlagen (HTTP $code)"; fail=1; continue; fi
+            # Anmeldespeicher von Easy Auth (.auth/, Sitzungstoken) gehört nicht in die Sicherung
+            python3 - "$file" <<'PY'
+          import sys, zipfile, os
+          src = sys.argv[1]; tmp = src + '.tmp'
+          with zipfile.ZipFile(src) as zi, zipfile.ZipFile(tmp, 'w', zipfile.ZIP_DEFLATED) as zo:
+              for item in zi.infolist():
+                  if item.filename.startswith('.auth/'):
+                      continue
+                  zo.writestr(item, zi.read(item.filename))
+          os.replace(tmp, src)
+          PY
             # Plausibilität: gültiges ZIP mit Inhalt
             count=$(python3 -c "import zipfile,sys; z=zipfile.ZipFile(sys.argv[1]); print(len([n for n in z.namelist() if not n.endswith('/')]))" "$file")
             if [ "$count" -lt 1 ]; then echo "::error::$app: Sicherung ist leer"; fail=1; continue; fi
