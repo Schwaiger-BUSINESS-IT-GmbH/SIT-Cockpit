@@ -44,10 +44,14 @@ if ($hostNames -contains $Hostname) {
 }
 
 Step 'Redirect-URI der Entra-App ergaenzen'
-$authAppId = AzOk ad app list --display-name "SIT-Cockpit ($AppName)" --query '[0].appId' -o tsv
+# Login-App ueber die tatsaechlich in Easy Auth hinterlegte Client-ID finden (funktioniert fuer Cockpit und SIT-Time)
+$webAppId = AzOk webapp show -g $ResourceGroup -n $AppName --query id -o tsv
+$authAppId = AzOk rest --method get --uri "https://management.azure.com$webAppId/config/authsettingsV2?api-version=2022-03-01" --query 'properties.identityProviders.azureActiveDirectory.registration.clientId' -o tsv
 if ($authAppId) {
-  AzOk ad app update --id $authAppId --web-redirect-uris `
-    "https://$defaultHost/.auth/login/aad/callback" "https://$Hostname/.auth/login/aad/callback" -o none
+  $uris = @(AzOk ad app show --id $authAppId --query 'web.redirectUris' -o json | ConvertFrom-Json)
+  $want = "https://$Hostname/.auth/login/aad/callback"
+  if ($uris -contains $want) { Write-Host 'Redirect-URI ist bereits eingetragen.' }
+  else { AzOk ad app update --id $authAppId --web-redirect-uris @($uris + $want) -o none }
 } else {
   Write-Host 'Entra-App nicht gefunden - Redirect-URI bitte manuell ergaenzen.' -ForegroundColor Yellow
 }
@@ -92,9 +96,9 @@ else {
 
 Step 'Zertifikat binden (SNI)'
 $bindUri = "https://management.azure.com/subscriptions/$sub/resourceGroups/$ResourceGroup/providers/Microsoft.Web/sites/$AppName/hostNameBindings/${Hostname}?api-version=2023-01-01"
-$bind = @{ properties = @{ siteName = $AppName; hostNameType = 'Verified'; sslState = 'SniEnabled'; thumbprint = $thumb } } | ConvertTo-Json -Depth 5
-$r = Invoke-WebRequest -Method Put -Uri $bindUri -Headers @{ Authorization = "Bearer $(Token)" } -ContentType 'application/json' -Body $bind -SkipHttpErrorCheck
+$bindBody = @{ properties = @{ siteName = $AppName; hostNameType = 'Verified'; sslState = 'SniEnabled'; thumbprint = $thumb } } | ConvertTo-Json -Depth 5
+$r = Invoke-WebRequest -Method Put -Uri $bindUri -Headers @{ Authorization = "Bearer $(Token)" } -ContentType 'application/json' -Body $bindBody -SkipHttpErrorCheck
 if ($r.StatusCode -ge 400) { throw "Bindung fehlgeschlagen: HTTP $($r.StatusCode) $([string]$r.Content)" }
 
 Step 'Fertig'
-Write-Host "SIT-Cockpit ist erreichbar unter https://$Hostname"
+Write-Host "Erreichbar unter https://$Hostname"
