@@ -1,0 +1,53 @@
+name: Datensicherung
+
+# Sichert jede Nacht den Datenordner (/home/data) von SIT-Cockpit und SIT-Time
+# als ZIP in einen privaten Azure-Storage (Aufbewahrung 90 Tage, siehe
+# infra/5-setup-backup.ps1). Anmeldung per OIDC, keine Passwörter im Repo.
+# Wiederherstellen: infra/6-restore-data.ps1
+
+on:
+  schedule:
+    - cron: '30 1 * * *'   # täglich 01:30 UTC (02:30/03:30 Uhr in Österreich)
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Datenordner sichern
+        env:
+          ACCOUNT: ${{ vars.BACKUP_STORAGE_ACCOUNT }}
+          CONTAINER: ${{ vars.BACKUP_CONTAINER }}
+          APPS: ${{ vars.BACKUP_APPS }}
+        run: |
+          set -euo pipefail
+          stamp=$(date -u +%Y-%m-%d_%H%M)
+          token=$(az account get-access-token --resource https://management.core.windows.net/ --query accessToken -o tsv)
+          fail=0
+          for app in $APPS; do
+            file="$app-$stamp.zip"
+            code=$(curl -sS -o "$file" -w '%{http_code}' -H "Authorization: Bearer $token" \
+              "https://$app.scm.azurewebsites.net/api/zip/data/")
+            if [ "$code" != "200" ]; then echo "::error::$app: Download fehlgeschlagen (HTTP $code)"; fail=1; continue; fi
+            # Plausibilität: gültiges ZIP mit Inhalt
+            count=$(python3 -c "import zipfile,sys; z=zipfile.ZipFile(sys.argv[1]); print(len([n for n in z.namelist() if not n.endswith('/')]))" "$file")
+            if [ "$count" -lt 1 ]; then echo "::error::$app: Sicherung ist leer"; fail=1; continue; fi
+            az storage blob upload --auth-mode login --account-name "$ACCOUNT" --container-name "$CONTAINER" \
+              --name "$app/$stamp.zip" --file "$file" --overwrite false --only-show-errors -o none
+            echo "$app: $count Dateien, $(du -h "$file" | cut -f1) → $ACCOUNT/$CONTAINER/$app/$stamp.zip" | tee -a "$GITHUB_STEP_SUMMARY"
+          done
+          exit $fail
