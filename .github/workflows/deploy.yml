@@ -1,0 +1,59 @@
+name: Deploy to Azure
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  id-token: write   # für Azure-Login per OIDC (kein Passwort im Repo)
+  contents: read
+
+concurrency:
+  group: deploy-azure
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Abhängigkeiten installieren
+        run: npm ci --omit=dev
+
+      - name: Smoke-Test (Server startet, Health-Check antwortet)
+        run: |
+          WECLAPP_BASE_URL=http://localhost:4010/webapp/api/v2 \
+          SESSION_SECRET=ci-secret-ci-secret-ci-secret-ci-secret \
+          DATA_DIR=/tmp/sit-data PORT=3999 node server/index.js &
+          for i in $(seq 1 20); do curl -fs http://localhost:3999/healthz && exit 0; sleep 0.5; done
+          echo "Server antwortet nicht" && exit 1
+
+      - name: Paket bauen
+        run: zip -qr release.zip . -x '.git/*' '.github/*' 'data/*' 'data-demo/*' 'infra/*' 'test/*' 'docs/*' 'design/*' 'assets/*' 'prototypes/*' '.claude/*' '.env'
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ vars.AZURE_WEBAPP_NAME }}
+          package: release.zip
+
+      - name: Health-Check nach Deployment
+        run: |
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' https://${{ vars.AZURE_WEBAPP_NAME }}.azurewebsites.net/healthz)
+            [ "$code" = "200" ] && echo "OK" && exit 0
+            sleep 5
+          done
+          echo "Health-Check fehlgeschlagen (letzter Status: $code)" && exit 1

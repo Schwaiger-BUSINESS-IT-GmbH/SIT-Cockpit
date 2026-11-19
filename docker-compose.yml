@@ -1,0 +1,11 @@
+services:
+  sit-cockpit:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "3000:3000"
+    volumes:
+      - sit-cockpit-data:/data
+volumes:
+  sit-cockpit-data:
