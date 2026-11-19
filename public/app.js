@@ -58,7 +58,7 @@ async function showApp() {
   $('#view-app').hidden = false;
   $('#user-name').textContent = state.me.user.name;
   $('#demo-badge').hidden = !state.me.demo;
-  if (!location.hash) location.hash = '#/kunden';
+  if (!location.hash) location.hash = '#/start';
   route();
   refreshNavBadge();
 }
@@ -91,15 +91,15 @@ function route() {
   navSeq++;
   clearInterval(pageTimer);
   pageTimer = null;
-  const [, page = 'kunden', id] = location.hash.split('/');
+  const [, page = 'start', id] = location.hash.split('/');
   $$('.side-nav a').forEach((a) => {
     if (a.dataset.nav === page || (page === 'zuordnung' && a.dataset.nav === 'kunden')) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
   });
   content.classList.toggle('flush', page === 'zeiten');
   content.classList.remove('board-host');
   if (page !== 'angebot') leaveBoard();
-  const pages = { kunden: id ? () => renderCustomer(id) : renderCustomers, zuordnung: renderCustomerMap, dashboard: renderDashboard, angebot: renderOffer, zeiten: renderTime };
-  (pages[page] || renderCustomers)();
+  const pages = { start: renderStart, kunden: id ? () => renderCustomer(id) : renderCustomers, zuordnung: renderCustomerMap, dashboard: renderDashboard, angebot: renderOffer, zeiten: renderTime };
+  (pages[page] || renderStart)();
   window.scrollTo(0, 0);
 }
 window.addEventListener('hashchange', route);
@@ -116,6 +116,89 @@ async function refreshNavBadge() {
   } catch { /* still */ }
 }
 setInterval(() => { if (state.me) refreshNavBadge(); }, 120000);
+
+// =====================================================================
+// Startseite
+// =====================================================================
+const ICON = {
+  kunden: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>',
+  vertrieb: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>',
+  angebot: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M8 17c1.5-2 3-2 4 0s2.5 1 4-1"/></svg>',
+  zeiten: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M9 2h6"/></svg>',
+};
+
+async function renderStart() {
+  const seq = navSeq;
+  const name = (state.me?.user?.name || '').split(' ')[0];
+  const h = new Date().getHours();
+  const hello = h < 11 ? 'Guten Morgen' : h < 18 ? 'Guten Tag' : 'Guten Abend';
+  content.innerHTML = `
+    <div class="page-head"><div><div class="eyebrow">${new Date().toLocaleDateString('de-AT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</div><h1>${hello}${name ? `, ${esc(name)}` : ''}</h1></div>
+      <div class="page-actions"><a class="btn primary" href="#/angebot">Neues Angebot</a><a class="btn ghost" href="#/zeiten">Zeiterfassung</a></div></div>
+    <section class="home-areas" id="home-areas">${['kunden', 'vertrieb', 'angebot', 'zeiten'].map((k) => `<div class="area-card loading-card" data-area="${k}"><div class="area-head">${ICON[k]}<span>Lade …</span></div></div>`).join('')}</section>
+    <div class="grid-2" style="margin-top:18px">
+      <section class="card"><div class="card-head"><h2>Braucht Aufmerksamkeit</h2><span class="muted small" id="att-count"></span></div><div id="attention"><p class="loading" style="padding:8px 0">Sammle offene Punkte …</p></div></section>
+      <section class="card"><div class="card-head"><h2>Schnellzugriff</h2></div><div class="quick" id="quick"></div></section>
+    </div>`;
+  // Alles parallel laden; jeder Bereich zeichnet sich, sobald seine Daten da sind
+  const [ov, dash, hist, drafts, timers, cmap] = await Promise.allSettled([
+    api('/atera/overview'), api('/dashboard'), api('/offer/history'), api('/offer/drafts'), api('/timers'), api('/customer-map'),
+  ]);
+  if (stale(seq)) return;
+  const val = (r) => (r.status === 'fulfilled' ? r.value : null);
+  const o = val(ov), d = val(dash), hi = val(hist)?.offers || [], dr = val(drafts)?.drafts || [], ti = val(timers), cm = val(cmap);
+
+  // --- Bereichskarten
+  const card = (k, href, title, big, bigLabel, lines, cls = '') => `<a class="area-card ${cls}" href="${href}" data-area="${k}">
+      <div class="area-head">${ICON[k]}<span>${title}</span><span class="area-go" aria-hidden="true">→</span></div>
+      <div class="area-big">${big}</div><div class="area-label">${bigLabel}</div>
+      <ul class="area-lines">${lines.filter(Boolean).map((l) => `<li>${l}</li>`).join('')}</ul></a>`;
+  const cust = o?.customers || [];
+  const crit = cust.filter((c) => c.status === 'critical'), warn = cust.filter((c) => c.status === 'warning');
+  const srvDown = cust.reduce((s, c) => s + c.serversDown, 0), fwDown = cust.reduce((s, c) => s + (c.firewallsDown || 0), 0);
+  const areas = [
+    o ? card('kunden', '#/kunden', 'Kunden &amp; Geräte', crit.length, crit.length === 1 ? 'Kunde kritisch' : 'Kunden kritisch',
+      [`${warn.length} mit Warnung · ${cust.length - crit.length - warn.length} ohne Befund`, srvDown || fwDown ? `${plural(srvDown, 'Server', 'Server')} offline · ${plural(fwDown, 'Firewall', 'Firewalls')} nicht erreichbar` : 'Alle Server und Firewalls erreichbar', `Stand ${ago(o.updatedAt)}`],
+      crit.length ? 'crit' : warn.length ? 'warn' : 'ok')
+      : card('kunden', '#/kunden', 'Kunden &amp; Geräte', '–', 'Atera nicht erreichbar', [esc(ov.reason?.message || '')]),
+    d ? card('vertrieb', '#/dashboard', 'Vertrieb &amp; Finanzen', d.quotations?.error ? '–' : eur0(d.quotations.net), d.quotations?.error ? 'Angebote: keine Berechtigung' : `in ${plural(d.quotations.count, 'offenem Angebot', 'offenen Angeboten')}`,
+      [!d.quotations?.error && d.quotations.followUpCount ? `${d.quotations.followUpCount} zum Nachfassen` : null, d.invoices?.error ? null : `${eur0(d.invoices.overdueGross)} überfällig (${plural(d.invoices.overdueCount, 'Rechnung', 'Rechnungen')})`, d.accepted?.error ? null : `${eur0(d.accepted.net)} diesen Monat angenommen`])
+      : card('vertrieb', '#/dashboard', 'Vertrieb &amp; Finanzen', '–', 'weclapp nicht erreichbar', []),
+    card('angebot', '#/angebot', 'Angebotsboard', plural(hi.filter((x) => new Date(x.signedAt).getMonth() === new Date().getMonth() && new Date(x.signedAt).getFullYear() === new Date().getFullYear()).length, 'Auftrag', 'Aufträge'), 'diesen Monat unterschrieben',
+      [hi[0] ? `Zuletzt: ${esc(hi[0].customer.company || hi[0].customer.name || '')} (${date(hi[0].signedAt)})` : 'Noch kein Auftrag über das Board', dr.length ? `${plural(dr.length, 'gespeicherter Kundenstand', 'gespeicherte Kundenstände')}` : null]),
+    (() => {
+      if (!ti) return card('zeiten', '#/zeiten', 'Zeiten', '–', 'Zeiten nicht verfügbar', []);
+      const run = (ti.timers || []).find((t) => t.running);
+      const today = (ti.history || []).filter((x) => new Date(x.bookedAt).toDateString() === new Date().toDateString());
+      const mins = today.reduce((s, x) => s + (Number(x.minutes) || 0), 0);
+      return card('zeiten', '#/zeiten', 'Zeiten', hm(mins), 'heute gebucht', [run ? `Läuft: ${esc(run.ticket.number)} ${esc(run.ticket.subject || '')}` : 'Kein Timer läuft', (ti.timers || []).length ? plural(ti.timers.length, 'offener Timer', 'offene Timer') : null], run ? 'run' : '');
+    })(),
+  ];
+  $('#home-areas').innerHTML = areas.join('');
+
+  // --- Braucht Aufmerksamkeit
+  const items = [];
+  for (const c of crit.slice(0, 6)) items.push({ sev: 'critical', tag: 'Kunde', text: `${c.name}: ${c.headline || 'kritisch'}`, href: `#/kunden/${encodeURIComponent(c.id)}` });
+  for (const x of hi.filter((x) => !x.weclapp?.quotationNumber).slice(0, 3)) items.push({ sev: 'neutral', tag: 'Auftrag', text: `${x.customer.company || x.customer.name}: unterschrieben, aber noch nicht in weclapp`, href: '#/dashboard' });
+  if (d && !d.invoices?.error) for (const i of d.invoices.list.slice(0, 3)) items.push({ sev: 'neutral', tag: 'Rechnung', text: `${i.number} ${i.customer}: ${eur(i.gross)} seit ${i.daysOverdue} Tagen fällig`, href: '#/dashboard' });
+  if (d && !d.quotations?.error) for (const q of d.quotations.list.filter((q) => q.ageDays >= d.followUpDays).slice(0, 3)) items.push({ sev: 'neutral', tag: 'Angebot', text: `${q.number} ${q.customer}: ${eur(q.net)}, ${q.ageDays} Tage offen`, href: '#/dashboard' });
+  for (const c of warn.slice(0, Math.max(0, 8 - items.length))) items.push({ sev: 'warning', tag: 'Kunde', text: `${c.name}: ${c.headline || 'Warnung'}`, href: `#/kunden/${encodeURIComponent(c.id)}` });
+  $('#att-count').textContent = items.length ? plural(items.length, 'Punkt', 'Punkte') : '';
+  $('#attention').innerHTML = items.length
+    ? `<ul class="att-list">${items.map((x) => `<li><a href="${x.href}">${chip(x.sev, x.tag)}<span>${esc(x.text)}</span></a></li>`).join('')}</ul>`
+    : '<div class="banner ok" style="margin:0"><div><b>Alles erledigt</b>Gerade gibt es nichts, das sofort Aufmerksamkeit braucht.</div></div>';
+
+  // --- Schnellzugriff
+  const openMap = cm ? cm.customers.filter((c) => !c.current?.id).length : null;
+  const quick = [
+    ['#/angebot', 'Neues Angebot', 'Am Tablet beim Kunden kalkulieren und unterschreiben'],
+    ['#/kunden', 'Kundenübersicht', 'Server und Firewalls aller Kunden'],
+    ['#/zeiten', 'Zeit erfassen', 'Timer auf ein weclapp-Ticket starten'],
+    ['#/dashboard', 'Vertrieb & Finanzen', 'Angebote, Aufträge, Rechnungen'],
+    ['#/zuordnung', 'Kundenzuordnung', openMap ? `${plural(openMap, 'Kunde', 'Kunden')} noch ohne weclapp-Verknüpfung` : 'Atera-Kunden mit weclapp verknüpfen'],
+  ];
+  $('#quick').innerHTML = quick.map(([href, t, sub]) => `<a class="quick-item" href="${href}"><b>${esc(t)}</b><span>${esc(sub)}</span></a>`).join('');
+}
 
 // =====================================================================
 // Kunden & Geräte (Atera)
