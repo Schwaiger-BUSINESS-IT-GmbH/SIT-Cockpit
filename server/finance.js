@@ -8,6 +8,7 @@
 //  - USt-Zahllast ist eine Näherung aus Rechnungsbeträgen, keine UVA.
 import { request, unwrap } from './weclapp.js';
 import { monthlyValue } from './sales.js';
+import { activeContracts } from './contracts.js';
 
 const get = (token, p, query) => request(token, 'GET', p, { query }).then(unwrap);
 const n = (v) => (v == null || v === '' ? 0 : Number(v) || 0);
@@ -65,7 +66,7 @@ export async function financeDashboard(token, now = Date.now()) {
       'invoiceDate-ge': lastYearStart, 'status-notin': JSON.stringify(['NEW', 'CANCELLED']),
       properties: 'id,invoiceDate,netAmount,vatAmount,purchaseInvoiceType',
     })),
-    section(get(token, '/contract', { 'contractStatus-eq': 'ACTIVE', pageSize: 1000 })),
+    section(activeContracts(token)),
   ]);
 
   const out = { generatedAt: now, notes: [] };

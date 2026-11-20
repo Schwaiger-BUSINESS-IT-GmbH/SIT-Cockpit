@@ -41,6 +41,8 @@ export const config = {
   companyAddress: process.env.COMPANY_ADDRESS || '',
   termsUrl: process.env.TERMS_URL || 'https://www.schwaiger-it.at/agb',
   vatPercent: num(process.env.VAT_PERCENT, 20),
+  // Nur-Lese-Token eines weclapp-Benutzers mit Vertragslizenz (Managed-Service-Umsatz), optional
+  weclappContractsToken: process.env.WECLAPP_CONTRACTS_TOKEN || '',
   // ---------- Finanzen (nur Entra-Gruppe) ----------
   financeGroupId: process.env.FINANCE_GROUP_ID || '',
   financeLocal: process.env.FINANCE_LOCAL === '1', // nur lokale Entwicklung ohne Microsoft-Login

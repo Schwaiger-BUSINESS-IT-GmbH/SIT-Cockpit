@@ -42,6 +42,10 @@ $env:WECLAPP_TOKEN="<dein-token>"; npm run check
 
 Prüft Anmeldung, API-Schema des Mandanten (alle Felder, Endpunkte und Statuswerte, die das Cockpit nutzt), deine Leserechte je Cockpit-Bereich, welcher Ticketstatus als „geschlossen“ gilt, ob alle Artikel des Angebotsboards in weclapp existieren, Atera-Zugriff, Gerätetypen, `LastSeen`, offene Alerts sowie die Zuordnung Atera-Kunde → weclapp-Kunde. Ergebnis mit ✔ / ⚠ / ✖; bei Fehlern Exit-Code 1.
 
+## Managed-Service-Umsatz (Verträge)
+
+Die Vertragsverwaltung ist in weclapp nur für einzelne Benutzer lizenziert. Damit alle den Managed-Service-Umsatz sehen, kann in Azure die App-Einstellung **`WECLAPP_CONTRACTS_TOKEN`** mit dem API-Token eines lizenzierten Benutzers gesetzt werden. Das Cockpit nutzt ihn **nur zum Lesen der aktiven Verträge** (10 Minuten gepuffert); an den Browser gehen ausschließlich Summen (Monatswert, Anzahl), nie Vertragsdetails oder der Token. Ein abgelehnter Token meldet einen eigenen Fehler und meldet niemanden ab. Ohne Einstellung gelten die Rechte des angemeldeten Benutzers.
+
 ## Ticket aus einem Problem
 
 In der Kundenansicht hat jedes Problem (Server/Firewall offline, Alert, Backup, Laufwerk, möglicher Ausfall) einen Knopf **„Ticket erstellen“**, dazu einer im Kundenkopf. Der Dialog ist vorausgefüllt: Betreff „Gerät: Problem“, Beschreibung mit Gerätedaten und Atera-Link, Priorität nach Ampel (kritisch → höchste Priorität), Bearbeiter = angemeldeter Benutzer, erster offener Status, Kanal „Monitoring“ (falls vorhanden). Alles änderbar.

@@ -158,6 +158,14 @@ async function checkWeclapp() {
     try { await wget(path, q); ok(label); } catch (e) { (e.status === 403 ? warn : fail)(`${label}: ${why(e)}${e.status === 403 ? ' – dieser Bereich bleibt für dich leer' : ''}`); }
   }
 
+  if (env.WECLAPP_CONTRACTS_TOKEN) {
+    try {
+      const url = new URL(WC + '/contract'); url.searchParams.set('pageSize', '1'); url.searchParams.set('contractStatus-eq', 'ACTIVE');
+      const res = await fetch(url, { headers: { AuthenticationToken: env.WECLAPP_CONTRACTS_TOKEN, Accept: 'application/json' }, signal: AbortSignal.timeout(60000) });
+      res.ok ? ok('Vertrags-Token (WECLAPP_CONTRACTS_TOKEN) darf Verträge lesen') : fail(`Vertrags-Token abgelehnt (HTTP ${res.status})`);
+    } catch (e) { fail(`Vertrags-Token: ${e.message}`); }
+  } else info('Kein WECLAPP_CONTRACTS_TOKEN gesetzt – Verträge mit den Rechten des Benutzers');
+
   try {
     const st = await wget('/ticketStatus', { pageSize: 200 });
     const re = env.TICKET_HIDDEN_STATUS_PATTERN ?? '^(geschlossen|abgeschlossen|erledigt|closed|storniert)$';

@@ -4,6 +4,7 @@
 // dieser Bereich leer statt das ganze Dashboard.
 import { config } from './config.js';
 import { request, unwrap } from './weclapp.js';
+import { activeContracts, contractsOfParty } from './contracts.js';
 
 const get = (token, path, query) => request(token, 'GET', path, { query }).then(unwrap);
 const n = (v) => (v == null || v === '' ? 0 : Number(v) || 0);
@@ -97,7 +98,7 @@ export async function customerFacts(token, partyId) {
     section(get(token, '/quotation', {
       'customerId-eq': partyId, 'status-in': JSON.stringify(OPEN_QUOTATION), properties: 'id,quotationNumber,quotationDate,netAmount,status', sort: '-quotationDate', pageSize: 50,
     }).then((rows) => ({ count: rows.length, net: sum(rows, 'netAmount'), items: rows.slice(0, 5).map((q) => ({ id: q.id, number: q.quotationNumber, date: q.quotationDate, net: n(q.netAmount) })) }))),
-    section(get(token, '/contract', { 'partyId-eq': partyId, 'contractStatus-eq': 'ACTIVE', pageSize: 50 })
+    section(contractsOfParty(token, partyId)
       .then((rows) => ({ count: rows.length, monthly: monthlyValue(rows) }))),
   ]);
   return { tickets, quotations, contracts };
@@ -141,7 +142,7 @@ export async function dashboard(token, { userId }) {
     section(request(token, 'GET', '/ticket/count', {
       query: closed.length ? { 'ticketStatusId-notin': JSON.stringify(closed) } : {},
     }).then((d) => ({ open: Number(unwrap(d)) || 0 }))),
-    section(get(token, '/contract', { 'contractStatus-eq': 'ACTIVE', pageSize: 1000 })),
+    section(activeContracts(token)),
     section(get(token, '/timeRecord', {
       'userId-eq': userId, 'startDate-ge': mStart, properties: 'id,durationSeconds,billableDurationSeconds,billable', pageSize: 1000,
     })),
