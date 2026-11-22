@@ -44,7 +44,9 @@ Prüft Anmeldung, API-Schema des Mandanten (alle Felder, Endpunkte und Statuswer
 
 ## Managed-Service-Umsatz (Verträge)
 
-Die Vertragsverwaltung ist in weclapp nur für einzelne Benutzer lizenziert. Damit alle den Managed-Service-Umsatz sehen, kann in Azure die App-Einstellung **`WECLAPP_CONTRACTS_TOKEN`** mit dem API-Token eines lizenzierten Benutzers gesetzt werden. Das Cockpit nutzt ihn **nur zum Lesen der aktiven Verträge** (10 Minuten gepuffert); an den Browser gehen ausschließlich Summen (Monatswert, Anzahl), nie Vertragsdetails oder der Token. Ein abgelehnter Token meldet einen eigenen Fehler und meldet niemanden ab. Ohne Einstellung gelten die Rechte des angemeldeten Benutzers.
+Die Vertragsverwaltung ist in weclapp nur für einzelne Benutzer lizenziert. Damit alle den Managed-Service-Umsatz sehen, kann in Azure die App-Einstellung **`WECLAPP_CONTRACTS_TOKEN`** mit dem API-Token eines lizenzierten Benutzers gesetzt werden. Das Cockpit nutzt ihn **nur zum Lesen der aktiven Verträge** (10 Minuten gepuffert); an den Browser gehen ausschließlich Summen (Monatswert, Anzahl), nie Vertragsdetails oder der Token. Ein abgelehnter Token meldet einen eigenen Fehler und meldet niemanden ab. Ohne Einstellung gelten die Rechte des angemeldeten Benutzers. Ausnahme: Unter **Finanzen › Wartungsverträge** (nur Entra-Gruppe Finanzen) sieht die Geschäftsführung die Verträge im Detail.
+
+**Finanzen › Wartungsverträge** zeigt je Kunde die aktiven Verträge, die Kunden ohne Vertrag (Rechnungen der letzten 12 Monate, Zeitbuchungen oder in Atera verwaltet) und die Rentabilität. Gerechnet wird so: Ertrag (Vertragswert anteilig) − Lizenzkosten (Kostenpositionen im Vertrag, sonst Einkaufspreis des Artikels) − Stunden × interner Stundensatz (`INTERNAL_HOURLY_COST`, Standard 60 €/h). Standardmäßig zählen nur nicht verrechenbare Stunden, und bei neuen Verträgen erst ab Vertragsbeginn.
 
 ## Ticket aus einem Problem
 

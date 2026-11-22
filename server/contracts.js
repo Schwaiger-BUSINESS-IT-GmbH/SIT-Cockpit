@@ -3,11 +3,28 @@
 // Ist WECLAPP_CONTRACTS_TOKEN gesetzt, liest das Cockpit die Verträge mit diesem
 // Token – AUSSCHLIESSLICH lesend und nur für diese eine Abfrage. Alle anderen
 // weclapp-Abfragen laufen weiter mit dem Token des angemeldeten Benutzers.
-// An den Browser gehen nur Summen (Monatswert, Anzahl), nie Vertragsdetails.
+// Vertrieb und Startseite bekommen nur Summen (Monatswert, Anzahl). Vertragsdetails
+// gehen nur über /api/finance/contracts an die Entra-Gruppe Finanzen.
 import { config } from './config.js';
 import { request, unwrap } from './weclapp.js';
 
+const PROPS = 'id,partyId,contractStatus,contractItems,contractCostItems,name,contractNumber,types,startDate,endDate,unlimited,latestPossibleTerminationDate,billingType';
 let cache = { at: 0, rows: null };
+let typeCache = { at: 0, rows: null };
+
+/** Vertragstypen (Wartungsvertrag, Managed Service …) – gleicher Token wie die Verträge */
+export async function contractTypes(userToken) {
+  const service = config.weclappContractsToken;
+  if (typeCache.rows && Date.now() - typeCache.at < 3600e3) return typeCache.rows;
+  let raw;
+  try { raw = unwrap(await request(service || userToken, 'GET', '/contractType', { query: { pageSize: 200 } })); } catch (e) {
+    if (service && (e.status === 401 || e.status === 403)) throw Object.assign(new Error('Vertragstypen: Vertrags-Token wird von weclapp abgelehnt'), { status: 502 });
+    throw e;
+  }
+  const rows = raw.map((t) => ({ id: String(t.id), name: t.name || `Typ ${t.id}`, active: t.active !== false }));
+  typeCache = { at: Date.now(), rows };
+  return rows;
+}
 
 export async function activeContracts(userToken) {
   const service = config.weclappContractsToken;
@@ -15,7 +32,7 @@ export async function activeContracts(userToken) {
   let rows;
   try {
     rows = unwrap(await request(service || userToken, 'GET', '/contract', {
-      query: { 'contractStatus-eq': 'ACTIVE', pageSize: 1000, properties: 'id,partyId,contractStatus,contractItems' },
+      query: { 'contractStatus-eq': 'ACTIVE', pageSize: 1000, properties: PROPS },
     }));
   } catch (e) {
     // Ein abgelehnter Vertrags-Token darf den angemeldeten Benutzer NICHT abmelden

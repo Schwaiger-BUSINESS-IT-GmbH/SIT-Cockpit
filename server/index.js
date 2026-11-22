@@ -9,6 +9,7 @@ import * as offers from './offers.js';
 import * as tickets from './tickets.js';
 import * as custmap from './customermap.js';
 import * as finance from './finance.js';
+import { maintenanceReport } from './maintenance.js';
 import { roles, requireFinance } from './access.js';
 import { registerTimeRoutes } from './time-routes.js';
 import { getStored, saveStored, removeStored } from './tokens.js';
@@ -128,6 +129,7 @@ api.post('/atera-tickets', h(async (req, res) => res.json(await tickets.createTi
 
 // ---------- Finanzen (nur Entra-Gruppe, serverseitig geprüft) ----------
 api.get('/finance', requireFinance, h(async (req, res) => res.json(await finance.financeDashboard(req.session.token))));
+api.get('/finance/contracts', requireFinance, h(async (req, res) => res.json(await maintenanceReport(req.session.token, { months: req.query.months, rate: req.query.rate, type: req.query.type || '', hours: req.query.hours }))));
 
 // ---------- weclapp-Dashboard ----------
 api.get('/dashboard', h(async (req, res) => {

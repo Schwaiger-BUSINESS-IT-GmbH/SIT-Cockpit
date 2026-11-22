@@ -46,6 +46,8 @@ export const config = {
   // ---------- Finanzen (nur Entra-Gruppe) ----------
   financeGroupId: process.env.FINANCE_GROUP_ID || '',
   financeLocal: process.env.FINANCE_LOCAL === '1', // nur lokale Entwicklung ohne Microsoft-Login
+  // Interner Kostensatz je Technikerstunde (Lohn + Nebenkosten) für die Vertragsrentabilität
+  internalHourlyCost: num(process.env.INTERNAL_HOURLY_COST, 60),
   // ---------- Dashboard ----------
   quotationFollowUpDays: num(process.env.QUOTATION_FOLLOWUP_DAYS, 14),
   // ---------- SIT-Time (Zeiten) ----------
