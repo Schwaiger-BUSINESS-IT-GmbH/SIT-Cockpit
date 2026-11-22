@@ -4,7 +4,7 @@ const D = 864e5;
 const now = Date.now();
 const ago = (days) => now - days * D;
 
-export function registerSales(r, { applyFilters, parties, tickets, timeRecords, documents, articles }) {
+export function registerSales(r, { applyFilters, parties, tickets, timeRecords, tasks, documents, articles }) {
   const categories = [{ id: '900', name: 'Managed Services' }, { id: '901', name: 'Hardware' }];
   const units = [{ id: 'u1', name: 'Stk.' }, { id: 'u2', name: 'Arbeitsplatz' }, { id: 'u3', name: 'Server' }, { id: 'u4', name: 'Benutzer' }, { id: 'u5', name: 'Firewall' }, { id: 'u6', name: 'Pauschale' }, { id: 'u7', name: 'Gerät' }];
   // Realistische weclapp-Artikel: eigene Artikelnummern und Namen, NICHT die Board-Kennungen.
@@ -134,19 +134,25 @@ export function registerSales(r, { applyFilters, parties, tickets, timeRecords, 
   // Einkaufspreise (Bezugsquellen) für Lizenz-Artikel; Dienstleistungen haben keinen
   const supplySources = [['800', 11], ['801', 8.5], ['802', 6], ['805', 62], ['806', 98], ['807', 175]].map(([articleId, price], i) => {
     const a = articles.find((x) => x.id === articleId);
-    a.supplySources = [{ id: `ss${i}`, articleSupplySourceId: `as${i}` }];
-    a.primarySupplySourceId = `as${i}`;
+    // wie in echtem weclapp: nicht jeder Artikel verweist selbst auf seine Bezugsquelle
+    if (i % 2 === 0) { a.supplySources = [{ id: `ss${i}`, articleSupplySourceId: `as${i}` }]; a.primarySupplySourceId = `as${i}`; }
     a.articleType = 'STORABLE';
     return { id: `as${i}`, articleId, supplierId: 's1', articlePrices: [{ price: String(price), priceScaleValue: '1', startDate: ago(500) }] };
   });
 
   // Zeitbuchungen je Kunde über das letzte Jahr (Lang & Partner bewusst sehr betreuungsintensiv)
   const hoursPerMonth = { 501: [2.5, 0.5], 502: [10, 1], 503: [3, 3], 505: [1.5, 0.25], 506: [4, 2.5], 507: [2, 1], 508: [3.5, 0.5], 509: [1, 1], 510: [0.25, 0] };
+  // Wie SIT-Time: meist auf die Aufgabe eines Tickets gebucht, customerId bleibt dann leer
+  for (const partyId of Object.keys(hoursPerMonth)) {
+    tickets.push({ id: `mk${partyId}`, ticketNumber: `T-W${partyId}`, subject: 'Laufende Betreuung', partyId, ticketStatusId: 'betreuung', lastModifiedDate: ago(3) });
+    tasks.push({ id: `mt${partyId}`, subject: 'Betreuung', entityReferences: [{ entityId: `mk${partyId}`, entityName: 'ticket' }] });
+  }
   for (const [partyId, [h, billable]] of Object.entries(hoursPerMonth)) {
     for (let m = 0; m < 12; m++) {
       const dur = Math.round(h * (0.7 + rnd() * 0.6) * 3600);
       const bill = Math.min(dur, Math.round(billable * 3600));
-      timeRecords.push({ id: `tm${partyId}-${m}`, userId: '101', customerId: partyId, startDate: ago(m * 30 + 5), durationSeconds: dur, billableDurationSeconds: bill, billable: bill > 0, description: 'Betreuung' });
+      const via = m % 3; // 0: Kunde direkt, 1: Aufgabe eines Tickets, 2: Ticket
+      timeRecords.push({ id: `tm${partyId}-${m}`, userId: '101', ...(via === 0 ? { customerId: partyId } : via === 1 ? { taskId: `mt${partyId}` } : { ticketId: `mk${partyId}` }), startDate: ago(m * 30 + 5), durationSeconds: dur, billableDurationSeconds: bill, billable: bill > 0, description: 'Betreuung' });
     }
   }
 

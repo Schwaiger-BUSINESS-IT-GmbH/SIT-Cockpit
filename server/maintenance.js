@@ -67,18 +67,48 @@ export function currentPrice(prices, now = Date.now()) {
 
 /** Einkaufspreise je Artikel: primäre Bezugsquelle, sonst günstigste, sonst Kalkulationspreis */
 async function purchasePrices(token, articles, now) {
-  const sourceIds = articles.flatMap((a) => (a.supplySources || []).map((s) => s.articleSupplySourceId || s.id));
-  const sources = sourceIds.length ? await byIds(token, '/articleSupplySource', sourceIds, 'id,articleId,articlePrices') : [];
-  const priceBySource = new Map(sources.map((s) => [String(s.id), currentPrice(s.articlePrices, now)]));
-  const out = {};
-  for (const a of articles) {
-    const ids = (a.supplySources || []).map((s) => String(s.articleSupplySourceId || s.id));
-    const primary = a.primarySupplySourceId && priceBySource.get(String(a.primarySupplySourceId));
-    const anyPrices = ids.map((id) => priceBySource.get(id)).filter((p) => p != null);
-    const calc = currentPrice((a.articleCalculationPrices || []).filter((p) => !p.articleCalculationPriceType || p.articleCalculationPriceType === 'CALCULATION_PRICE'), now);
-    out[a.id] = primary ?? (anyPrices.length ? Math.min(...anyPrices) : calc);
+  const ids = articles.map((a) => String(a.id));
+  const sources = [];
+  for (let i = 0; i < ids.length; i += 100) {
+    sources.push(...await get(token, '/articleSupplySource', { 'articleId-in': JSON.stringify(ids.slice(i, i + 100)), properties: 'id,articleId,articlePrices', pageSize: 1000 }));
   }
-  return out;
+  const byArticle = {};
+  for (const s of sources) (byArticle[s.articleId] ||= []).push({ id: String(s.id), price: currentPrice(s.articlePrices, now) });
+  const out = {}, stats = { articles: articles.length, withSource: 0, fromSource: 0, fromCalc: 0, none: 0 };
+  for (const a of articles) {
+    const list = byArticle[a.id] || [];
+    if (list.length) stats.withSource++;
+    const refs = new Set([a.primarySupplySourceId, ...(a.supplySources || []).flatMap((x) => [x.articleSupplySourceId, x.id])].filter(Boolean).map(String));
+    const primary = list.find((x) => refs.has(x.id) && x.price != null && String(a.primarySupplySourceId) === x.id)?.price;
+    const anyPrices = list.map((x) => x.price).filter((p) => p != null);
+    const calc = currentPrice((a.articleCalculationPrices || []).filter((p) => !p.articleCalculationPriceType || p.articleCalculationPriceType === 'CALCULATION_PRICE'), now);
+    const p = primary ?? (anyPrices.length ? Math.min(...anyPrices) : null);
+    if (p != null) { out[a.id] = p; stats.fromSource++; } else if (calc != null) { out[a.id] = calc; stats.fromCalc++; } else stats.none++;
+  }
+  return { prices: out, stats };
+}
+
+/** Kunde einer Zeitbuchung: direkt, sonst über Ticket, Aufgabe (-> Kunde oder Ticket) oder Auftrag */
+async function attributeRecords(token, records) {
+  const stats = { total: records.length, direct: 0, ticket: 0, task: 0, order: 0, none: 0 };
+  const need = (f) => [...new Set(records.filter((r) => !r.customerId && r[f]).map((r) => String(r[f])))];
+  const safe = (p) => p.catch(() => []);
+  const tasks = await safe(byIds(token, '/task', need('taskId'), 'id,customerId,ticketId,entityReferences'));
+  const taskById = Object.fromEntries(tasks.map((t) => [String(t.id), t]));
+  const taskTicket = (t) => t?.ticketId || (t?.entityReferences || []).find((e) => /ticket/i.test(e.entityName || ''))?.entityId;
+  const ticketIds = [...need('ticketId'), ...tasks.filter((t) => !t.customerId).map(taskTicket).filter(Boolean).map(String)];
+  const tickets = await safe(byIds(token, '/ticket', ticketIds, 'id,partyId'));
+  const ticketParty = Object.fromEntries(tickets.map((t) => [String(t.id), t.partyId]));
+  const orders = await safe(byIds(token, '/salesOrder', need('salesOrderId'), 'id,customerId'));
+  const orderParty = Object.fromEntries(orders.map((o) => [String(o.id), o.customerId]));
+  for (const r of records) {
+    let p = r.customerId, via = 'direct';
+    if (!p && r.ticketId) { p = ticketParty[r.ticketId]; via = 'ticket'; }
+    if (!p && r.taskId) { const t = taskById[r.taskId]; p = t?.customerId || ticketParty[taskTicket(t)]; via = 'task'; }
+    if (!p && r.salesOrderId) { p = orderParty[r.salesOrderId]; via = 'order'; }
+    if (p) { r.customerId = String(p); stats[via]++; } else stats.none++;
+  }
+  return stats;
 }
 
 export async function maintenanceReport(token, { months = 12, rate, type = '', hours = 'nonbillable', now = Date.now() } = {}) {
@@ -98,17 +128,19 @@ export async function maintenanceReport(token, { months = 12, rate, type = '', h
 
   // Artikel (Namen + Einkaufspreise) für Positionen ohne eigene Kostenpositionen
   const articleIds = contracts.flatMap((c) => (c.contractItems || []).map((it) => it.articleId));
-  let articles = [], prices = {}, articleError = null;
+  let articles = [], prices = {}, priceStats = null, articleError = null;
   try {
     articles = articleIds.length ? await byIds(token, '/article', articleIds, 'id,articleNumber,name,articleType,supplySources,primarySupplySourceId,articleCalculationPrices') : [];
-    prices = await purchasePrices(token, articles, now);
+    ({ prices, stats: priceStats } = await purchasePrices(token, articles, now));
   } catch (e) { articleError = errText(e); notes.push(`Einkaufspreise der Artikel nicht lesbar (${articleError}) – Lizenzkosten nur aus Vertrags-Kostenpositionen.`); }
   const article = Object.fromEntries(articles.map((a) => [String(a.id), a]));
 
   // Stunden im Zeitraum, alle Kunden (auch für „ohne Vertrag“)
-  let records = [], hoursError = null;
+  let records = [], hoursError = null, hourStats = null;
   try {
-    records = (await all(token, '/timeRecord', { 'startDate-ge': from, properties: 'id,customerId,startDate,durationSeconds,billable,billableDurationSeconds' })).filter((r) => r.customerId);
+    records = await all(token, '/timeRecord', { 'startDate-ge': from, properties: 'id,customerId,ticketId,taskId,salesOrderId,startDate,durationSeconds,billable,billableDurationSeconds' });
+    hourStats = await attributeRecords(token, records);
+    records = records.filter((r) => r.customerId);
   } catch (e) { hoursError = errText(e); notes.push(`Zeitbuchungen nicht lesbar (${hoursError}) – Stundenkosten fehlen.`); }
 
   // ---------- Kunden mit Vertrag ----------
@@ -233,9 +265,17 @@ export async function maintenanceReport(token, { months = 12, rate, type = '', h
     'Kunden ohne Vertrag = Kunden mit Rechnungen in den letzten 12 Monaten, mit Zeitbuchungen im Zeitraum oder in Atera verwaltet.',
   );
 
+  // Datengrundlage – damit fehlende Stunden/Preise in weclapp nachvollziehbar sind
+  const withCost = contracts.filter((c) => (c.contractCostItems || []).some((it) => itemMonthly(it) > 0)).length;
+  const diag = [
+    `Verträge: ${contracts.length}, davon ${withCost} mit Kostenpositionen (Lizenzkosten direkt aus dem Vertrag).`,
+    priceStats && `Artikel in Vertragspositionen: ${priceStats.articles} – mit Bezugsquelle ${priceStats.withSource}, Einkaufspreis aus Bezugsquelle ${priceStats.fromSource}, aus Kalkulationspreis ${priceStats.fromCalc}, ohne Preis ${priceStats.none}.`,
+    hourStats && `Zeitbuchungen im Zeitraum: ${hourStats.total} – Kunde direkt ${hourStats.direct}, über Ticket ${hourStats.ticket}, über Aufgabe ${hourStats.task}, über Auftrag ${hourStats.order}, ohne Kundenbezug ${hourStats.none}.`,
+  ].filter(Boolean);
+
   return {
     generatedAt: now, period: { from, to: now, months }, rate, hours: countAll ? 'all' : 'nonbillable',
     types: types.map((t) => ({ ...t, count: typeCounts[t.id] || 0 })).filter((t) => t.count || t.active), selectedType: type ? String(type) : '',
-    hoursError, articleError, totals, customers, without, notes,
+    hoursError, articleError, totals, customers, without, notes, diag,
   };
 }

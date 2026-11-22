@@ -61,6 +61,14 @@ test('Auswertung: Kostenpositionen vor Einkaufspreis, Stunden ab Vertragsbeginn,
   assert.ok(wagner.hoursTotal < 2 * 1.3 * 6);
   // Marge = Ertrag − Lizenzen − Stunden × Satz
   for (const c of r.customers) assert.ok(Math.abs(c.margin - (c.revenue - c.licenseCost - c.hoursCounted * 60)) < 0.5); // Stunden auf 0,01 h gerundet
+  // SIT-Time bucht auf Aufgaben/Tickets ohne customerId -> trotzdem dem Kunden zugeordnet
+  assert.ok(huber.hoursTotal > 2 * 0.7 * 11);
+  assert.match(r.diag.join(' '), /über Aufgabe [1-9]/);
+  assert.match(r.diag.join(' '), /über Ticket [1-9]/);
+  // Bezugsquelle auch ohne Verweis am Artikel gefunden (801 hat keinen)
+  const wimmer = r.customers.find((c) => c.partyId === '505');
+  assert.equal(wimmer.monthlyCost, 5 * 11);
+  assert.equal(r.customers.find((c) => c.partyId === '510').monthlyCost, 3 * 8.5);
   const without = r.without.rows.map((x) => x.partyId);
   assert.ok(without.includes('506') && without.includes('503'));
   assert.ok(!without.includes('501'));

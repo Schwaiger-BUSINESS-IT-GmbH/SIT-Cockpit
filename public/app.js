@@ -806,7 +806,8 @@ async function renderContracts() {
           <td><a class="small" href="#/angebot">Angebot</a></td></tr>`).join('')}
       </tbody></table></div>` : '<p class="empty">Alle relevanten Kunden haben einen Vertrag.</p>'}
     </div>
-    <div class="card" style="margin-top:18px"><h3>So wird gerechnet</h3><ul class="muted small" style="margin:6px 0 0;padding-left:18px">${d.notes.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>`;
+    <div class="card" style="margin-top:18px"><h3>So wird gerechnet</h3><ul class="muted small" style="margin:6px 0 0;padding-left:18px">${d.notes.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
+      ${d.diag?.length ? `<h3 style="margin-top:14px">Datengrundlage aus weclapp</h3><ul class="muted small" style="margin:6px 0 0;padding-left:18px">${d.diag.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}</div>`;
 
   const form = $('#ct-form');
   const save = () => {
