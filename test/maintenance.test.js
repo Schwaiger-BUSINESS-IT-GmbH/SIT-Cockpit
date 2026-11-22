@@ -69,6 +69,14 @@ test('Auswertung: Kostenpositionen vor Einkaufspreis, Stunden ab Vertragsbeginn,
   const wimmer = r.customers.find((c) => c.partyId === '505');
   assert.equal(wimmer.monthlyCost, 5 * 11);
   assert.equal(r.customers.find((c) => c.partyId === '510').monthlyCost, 3 * 8.5);
+  // Reiner Lizenzvertrag (Hofer: nur 801) trägt keine Stunden, Artikel ohne EK werden gelistet
+  const hofer = r.customers.find((x) => x.partyId === '510');
+  assert.equal(hofer.carriesHours, false);
+  assert.equal(hofer.hoursCounted, 0);
+  // Fakturierte Stunden zählen nicht gegen den Vertrag
+  assert.ok(huber.carriesHours && huber.hoursInvoiced > 0);
+  assert.ok(huber.hoursCounted <= huber.hoursTotal - huber.hoursInvoiced + 0.01);
+  assert.ok(Array.isArray(r.missingPrices));
   const without = r.without.rows.map((x) => x.partyId);
   assert.ok(without.includes('506') && without.includes('503'));
   assert.ok(!without.includes('501'));
@@ -79,7 +87,7 @@ test('Filter Vertragstyp und Stundensatz', async () => {
   assert.equal(r.selectedType, 't1');
   assert.equal(r.rate, 100);
   assert.ok(r.customers.length && r.customers.length < 6);
-  for (const c of r.customers) assert.equal(c.hoursCounted, c.hoursTotal);
+  for (const c of r.customers) assert.equal(c.hoursCounted, c.carriesHours ? c.hoursTotal : 0);
   // Kunden mit Vertrag eines anderen Typs erscheinen unter "ohne", markiert
   assert.ok(r.without.rows.some((x) => x.otherContract));
 });

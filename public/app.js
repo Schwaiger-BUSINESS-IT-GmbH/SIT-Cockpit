@@ -728,7 +728,7 @@ async function renderFinance() {
 const financeTabs = (active) => `<nav class="subtabs" aria-label="Finanzen">${[['', 'Übersicht'], ['vertraege', 'Wartungsverträge']].map(([k, l]) => `<a href="#/finanzen${k ? `/${k}` : ''}"${k === active ? ' aria-current="page"' : ''}>${l}</a>`).join('')}</nav>`;
 const CT_KEY = 'sit-cockpit-contracts';
 function contractPrefs() {
-  try { return { months: 12, rate: '', type: '', hours: 'nonbillable', ...JSON.parse(localStorage.getItem(CT_KEY) || '{}') }; } catch { return { months: 12, rate: '', type: '', hours: 'nonbillable' }; }
+  try { return { months: 12, rate: '', type: '', hours: 'unbilled', ...JSON.parse(localStorage.getItem(CT_KEY) || '{}') }; } catch { return { months: 12, rate: '', type: '', hours: 'unbilled' }; }
 }
 const hours = (h) => `${nf(Math.round(h * 10) / 10)} h`;
 const signedEur = (v) => (v < 0 ? `−${eur0(-v)}` : eur0(v));
@@ -759,9 +759,9 @@ async function renderContracts() {
     return `<div class="costbar" title="Lizenzen ${eur0(c.licenseCost)} · Stunden ${eur0(c.laborCost)} · Ertrag ${eur0(c.revenue)}"><i class="lic" style="width:${w(c.licenseCost)}"></i><i class="lab" style="width:${w(c.laborCost)}"></i>${c.margin > 0 ? `<i class="mar" style="width:${w(c.margin)}"></i>` : ''}${c.margin < 0 ? `<b class="rev" style="left:${w(c.revenue)}"></b>` : ''}</div>`;
   };
   const contractLine = (k) => `<li><b>${esc(k.number || k.name || 'Vertrag')}</b>${k.name && k.number ? ` ${esc(k.name)}` : ''} ${k.types.map((x) => chip('neutral', x)).join(' ')}
-    <span class="muted">· ${eur0(k.monthly)}/Monat · seit ${date(k.start)}${k.unlimited ? ' · unbefristet' : ` · bis ${date(k.end)}`}${k.costSource === 'vertrag' ? ' · Kosten aus Vertrag' : ''}</span>
+    <span class="muted">· ${eur0(k.monthly)}/Monat · seit ${date(k.start)}${k.unlimited ? ' · unbefristet' : ` · bis ${date(k.end)}`}${k.costSource === 'vertrag' ? ' · Kosten aus Vertrag' : ''}${k.carriesHours ? '' : ' · nur Lizenzen, keine Stunden'}</span>
     ${k.termination && k.termination > Date.now() && k.termination < soon ? ` ${chip('neutral', `kündbar bis ${date(k.termination)}`)}` : ''}
-    <ul>${k.items.map((it) => `<li>${nf(it.quantity)} × ${esc(it.title)} <span class="muted">${eur(it.monthly)}/Monat</span></li>`).join('')}</ul></li>`;
+    <ul>${k.items.map((it) => `<li>${nf(it.quantity)} × ${esc(it.title)} <span class="muted">${eur(it.monthly)}/Monat${it.purchase != null ? ` · EK ${eur(it.purchase)}` : ''}</span>${it.service ? ` ${chip('neutral', 'Leistung')}` : it.purchase == null && k.costSource !== 'vertrag' ? ` ${chip('neutral', 'kein EK')}` : ''}</li>`).join('')}</ul></li>`;
   const typeName = d.types.find((x) => x.id === d.selectedType)?.name;
   content.innerHTML = `
     <div class="page-head"><div><div class="eyebrow">Finanzen · nur Gruppe Finanzen</div><h1>Wartungsverträge</h1></div>
@@ -769,7 +769,7 @@ async function renderContracts() {
     <form class="toolbar ct-filter" id="ct-form">
       <label>Zeitraum <select name="months">${[3, 6, 12, 24].map((m) => `<option value="${m}"${m === d.period.months ? ' selected' : ''}>letzte ${m} Monate</option>`).join('')}</select></label>
       <label>Vertragstyp <select name="type"><option value="">alle aktiven Verträge</option>${d.types.map((x) => `<option value="${esc(x.id)}"${x.id === d.selectedType ? ' selected' : ''}>${esc(x.name)} (${x.count})</option>`).join('')}</select></label>
-      <label>Stunden <select name="hours"><option value="nonbillable"${d.hours !== 'all' ? ' selected' : ''}>nur nicht verrechenbare</option><option value="all"${d.hours === 'all' ? ' selected' : ''}>alle Stunden</option></select></label>
+      <label>Stunden <select name="hours"><option value="unbilled"${d.hours !== 'all' ? ' selected' : ''}>nur nie fakturierte</option><option value="all"${d.hours === 'all' ? ' selected' : ''}>alle Stunden</option></select></label>
       <label>Interner Stundensatz <span class="ct-rate"><input name="rate" type="number" min="1" step="1" inputmode="numeric" value="${d.rate}" aria-label="Interner Stundensatz in Euro"> €/h</span></label>
     </form>
     <section class="kpis">
@@ -789,7 +789,7 @@ async function renderContracts() {
           <td class="num">${eur0(c.monthly)}</td>
           <td class="num">${eur0(c.revenue)}</td>
           <td class="num">${eur0(c.licenseCost)}</td>
-          <td class="num" title="gesamt ${hours(c.hoursTotal)}, davon verrechenbar ${hours(c.hoursBillable)}">${hours(c.hoursCounted)}${d.hours !== 'all' && c.hoursBillable ? `<div class="muted small">+${hours(c.hoursBillable)} verr.</div>` : ''}</td>
+          <td class="num" title="gesamt ${hours(c.hoursTotal)} · fakturiert ${hours(c.hoursInvoiced)} · noch offen ${hours(c.hoursOpen)}">${c.carriesHours ? hours(c.hoursCounted) : '<span class="muted" title="Vertrag ohne eigene Leistung – nur Lizenzmarge">–</span>'}${c.hoursInvoiced ? `<div class="muted small">${hours(c.hoursInvoiced)} fakturiert</div>` : ''}</td>
           <td class="num">${eur0(c.laborCost)}</td>
           <td class="num"><b>${signedEur(c.margin)}</b>${c.marginPct != null ? `<div class="muted small">${signedPct(c.marginPct)}</div>` : ''}${c.margin < 0 ? ` ${chip('neutral', 'unter Kosten')}` : ''}</td>
           <td class="num">${c.yieldPerHour != null ? signedEur(c.yieldPerHour) : '<span class="muted">–</span>'}</td>
@@ -799,13 +799,15 @@ async function renderContracts() {
     </div>
     <div class="card" style="margin-top:18px">
       <div class="card-head"><h2>Kunden ohne ${typeName ? esc(typeName) : 'Vertrag'}</h2><span class="muted small">in Atera verwaltet zuerst, dann nach Aufwand</span></div>
-      ${wo.error ? `<p class="empty">${esc(wo.error)}</p>` : woRows.length ? `<div class="table-wrap"><table><thead><tr><th>Kunde</th><th>Hinweis</th><th class="num">Umsatz 12 Monate</th><th class="num">Stunden ${d.period.months} Monate</th><th class="num">davon verrechenbar</th><th></th></tr></thead><tbody>
+      ${wo.error ? `<p class="empty">${esc(wo.error)}</p>` : woRows.length ? `<div class="table-wrap"><table><thead><tr><th>Kunde</th><th>Hinweis</th><th class="num">Umsatz 12 Monate</th><th class="num">Stunden ${d.period.months} Monate</th><th class="num">davon fakturiert</th><th></th></tr></thead><tbody>
         ${woRows.map((x) => `<tr><td class="wrap"><b>${esc(x.name)}</b> <span class="muted small">${esc(x.number)}</span></td>
           <td>${x.atera ? chip('neutral', 'in Atera verwaltet') : ''} ${x.otherContract ? chip('neutral', 'anderer Vertragstyp') : ''}</td>
-          <td class="num">${eur0(x.revenue12)}</td><td class="num">${hours(x.hours)}</td><td class="num">${hours(x.hoursBillable)}</td>
+          <td class="num">${eur0(x.revenue12)}</td><td class="num">${hours(x.hours)}</td><td class="num">${hours(x.hoursInvoiced)}</td>
           <td><a class="small" href="#/angebot">Angebot</a></td></tr>`).join('')}
       </tbody></table></div>` : '<p class="empty">Alle relevanten Kunden haben einen Vertrag.</p>'}
     </div>
+    ${d.missingPrices?.length ? `<div class="card" style="margin-top:18px"><div class="card-head"><h2>Artikel ohne Einkaufspreis</h2><span class="muted small">in weclapp am Artikel als Bezugsquelle pflegen</span></div>
+      <div class="table-wrap"><table><thead><tr><th>Artikelnr.</th><th>Artikel</th><th class="num">in Verträgen</th></tr></thead><tbody>${d.missingPrices.map((a) => `<tr><td class="muted">${esc(a.number)}</td><td class="wrap">${esc(a.name)}</td><td class="num">${a.contracts}</td></tr>`).join('')}</tbody></table></div></div>` : ''}
     <div class="card" style="margin-top:18px"><h3>So wird gerechnet</h3><ul class="muted small" style="margin:6px 0 0;padding-left:18px">${d.notes.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
       ${d.diag?.length ? `<h3 style="margin-top:14px">Datengrundlage aus weclapp</h3><ul class="muted small" style="margin:6px 0 0;padding-left:18px">${d.diag.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}</div>`;
 

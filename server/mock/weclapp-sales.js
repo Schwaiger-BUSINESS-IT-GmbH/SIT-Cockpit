@@ -152,7 +152,12 @@ export function registerSales(r, { applyFilters, parties, tickets, timeRecords, 
       const dur = Math.round(h * (0.7 + rnd() * 0.6) * 3600);
       const bill = Math.min(dur, Math.round(billable * 3600));
       const via = m % 3; // 0: Kunde direkt, 1: Aufgabe eines Tickets, 2: Ticket
-      timeRecords.push({ id: `tm${partyId}-${m}`, userId: '101', ...(via === 0 ? { customerId: partyId } : via === 1 ? { taskId: `mt${partyId}` } : { ticketId: `mk${partyId}` }), startDate: ago(m * 30 + 5), durationSeconds: dur, billableDurationSeconds: bill, billable: bill > 0, description: 'Betreuung' });
+      const ref = via === 0 ? { customerId: partyId } : via === 1 ? { taskId: `mt${partyId}` } : { ticketId: `mk${partyId}` };
+      // Inklusivleistung (nie fakturiert) und verrechenbare Zeit getrennt gebucht;
+      // die verrechenbare wird abgerechnet, im laufenden Monat ist sie noch offen
+      if (dur - bill > 0) timeRecords.push({ id: `tm${partyId}-${m}`, userId: '101', ...ref, startDate: ago(m * 30 + 5), durationSeconds: dur - bill, billableDurationSeconds: 0, billable: false, billableInvoiceStatus: 'NOT_INVOICED', description: 'Betreuung' });
+      if (bill > 0) timeRecords.push({ id: `tb${partyId}-${m}`, userId: '101', ...ref, startDate: ago(m * 30 + 6), durationSeconds: bill, billableDurationSeconds: bill, billable: true, description: 'Zusatzauftrag',
+        billableInvoiceStatus: m > 0 ? 'INVOICED' : 'NOT_INVOICED', ...(m > 0 ? { salesInvoiceId: `h${m}-0` } : {}) });
     }
   }
 

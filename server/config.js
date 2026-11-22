@@ -48,6 +48,8 @@ export const config = {
   financeLocal: process.env.FINANCE_LOCAL === '1', // nur lokale Entwicklung ohne Microsoft-Login
   // Interner Kostensatz je Technikerstunde (Lohn + Nebenkosten) für die Vertragsrentabilität
   internalHourlyCost: num(process.env.INTERNAL_HOURLY_COST, 60),
+  // Artikel/Kategorien mit diesem Muster im Namen gelten als Wartungsleistung (tragen Stunden)
+  maintenanceArticlePattern: process.env.MAINTENANCE_ARTICLE_PATTERN || 'wartung',
   // ---------- Dashboard ----------
   quotationFollowUpDays: num(process.env.QUOTATION_FOLLOWUP_DAYS, 14),
   // ---------- SIT-Time (Zeiten) ----------

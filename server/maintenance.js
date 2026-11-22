@@ -5,7 +5,7 @@
 //   Ertrag        = wiederkehrender Vertragswert, anteilig für die Laufzeit im Zeitraum
 //   Lizenzkosten  = Kostenpositionen des Vertrags (weclapp „Kosten“), sonst
 //                   Menge × Einkaufspreis des Artikels (Bezugsquelle bzw. Kalkulationspreis)
-//   Stundenkosten = gebuchte Stunden beim Kunden × interner Stundensatz
+//   Stundenkosten = nie fakturierte Stunden × interner Stundensatz, nur bei Verträgen mit eigener Leistung
 //                   (Standard: nur NICHT verrechenbare Stunden – verrechenbare werden extra fakturiert)
 //   Marge         = Ertrag − Lizenzkosten − Stundenkosten
 import { config } from './config.js';
@@ -130,22 +130,32 @@ export async function maintenanceReport(token, { months = 12, rate, type = '', h
   const articleIds = contracts.flatMap((c) => (c.contractItems || []).map((it) => it.articleId));
   let articles = [], prices = {}, priceStats = null, articleError = null;
   try {
-    articles = articleIds.length ? await byIds(token, '/article', articleIds, 'id,articleNumber,name,articleType,supplySources,primarySupplySourceId,articleCalculationPrices') : [];
+    articles = articleIds.length ? await byIds(token, '/article', articleIds, 'id,articleNumber,name,articleType,articleCategoryId,supplySources,primarySupplySourceId,articleCalculationPrices') : [];
     ({ prices, stats: priceStats } = await purchasePrices(token, articles, now));
   } catch (e) { articleError = errText(e); notes.push(`Einkaufspreise der Artikel nicht lesbar (${articleError}) – Lizenzkosten nur aus Vertrags-Kostenpositionen.`); }
   const article = Object.fromEntries(articles.map((a) => [String(a.id), a]));
+  const categories = await get(token, '/articleCategory', { pageSize: 1000, properties: 'id,name' }).catch(() => []);
+  const categoryName = Object.fromEntries(categories.map((c) => [String(c.id), c.name || '']));
+  const servicePattern = new RegExp(config.maintenanceArticlePattern || 'wartung', 'i');
+  // Eigene Leistung (trägt Stunden): Dienstleistungsartikel ohne Einkaufspreis oder Wartungsartikel
+  const isService = (articleId) => {
+    const a = article[String(articleId)];
+    if (!a) return false;
+    if (servicePattern.test(`${a.name || ''} ${categoryName[a.articleCategoryId] || ''}`)) return true;
+    return a.articleType === 'SERVICE' && prices[String(a.id)] == null;
+  };
 
   // Stunden im Zeitraum, alle Kunden (auch für „ohne Vertrag“)
   let records = [], hoursError = null, hourStats = null;
   try {
-    records = await all(token, '/timeRecord', { 'startDate-ge': from, properties: 'id,customerId,ticketId,taskId,salesOrderId,startDate,durationSeconds,billable,billableDurationSeconds' });
+    records = await all(token, '/timeRecord', { 'startDate-ge': from, properties: 'id,customerId,ticketId,taskId,salesOrderId,salesInvoiceId,billableInvoiceStatus,startDate,durationSeconds,billable,billableDurationSeconds' });
     hourStats = await attributeRecords(token, records);
     records = records.filter((r) => r.customerId);
   } catch (e) { hoursError = errText(e); notes.push(`Zeitbuchungen nicht lesbar (${hoursError}) – Stundenkosten fehlen.`); }
 
   // ---------- Kunden mit Vertrag ----------
   const byParty = new Map();
-  let missingPrice = 0;
+  const missingArticles = new Map(); // Artikel ohne Einkaufspreis (zum Nachpflegen)
   for (const c of contracts) {
     const items = (c.contractItems || []).filter((it) => itemMonthly(it) > 0);
     const costItems = (c.contractCostItems || []).filter((it) => itemMonthly(it) > 0);
@@ -156,18 +166,34 @@ export async function maintenanceReport(token, { months = 12, rate, type = '', h
       costSource = 'einkauf';
       for (const it of items) {
         const p = prices[String(it.articleId)];
-        if (p == null) { if (article[String(it.articleId)]?.articleType !== 'SERVICE') missingPrice++; continue; }
+        if (p == null) {
+          const a = article[String(it.articleId)];
+          if (a && !isService(it.articleId)) {
+            const x = missingArticles.get(String(a.id)) || { id: String(a.id), number: a.articleNumber || '', name: a.name || '', contracts: 0 };
+            x.contracts++;
+            missingArticles.set(x.id, x);
+          }
+          continue;
+        }
         monthlyCost += p * n(it.quantity || 1) * (INTERVAL_PER_MONTH[it.interval] ?? 0);
       }
     }
     const m = activeMonths(c, from, now);
-    const entry = byParty.get(String(c.partyId)) || { partyId: String(c.partyId), since: now, contracts: [], monthly: 0, monthlyCost: 0, revenue: 0, licenseCost: 0 };
+    const carriesHours = items.some((it) => isService(it.articleId));
+    const entry = byParty.get(String(c.partyId)) || { partyId: String(c.partyId), since: now, serviceSince: null, contracts: [], monthly: 0, monthlyCost: 0, revenue: 0, licenseCost: 0 };
+    if (carriesHours) entry.serviceSince = Math.min(entry.serviceSince ?? now, Math.max(n(c.startDate) || from, from));
     entry.contracts.push({
       id: c.id, number: c.contractNumber || '', name: c.name || '', types: (c.types || []).map((t) => typeName[t.id] || '').filter(Boolean),
       start: n(c.startDate) || null, end: c.unlimited ? null : n(c.endDate) || null, unlimited: Boolean(c.unlimited) || !n(c.endDate),
       termination: n(c.latestPossibleTerminationDate) || null,
-      monthly: r2(monthly), monthlyCost: r2(monthlyCost), costSource,
-      items: items.map((it) => ({ title: it.title || article[String(it.articleId)]?.name || 'Position', quantity: n(it.quantity || 1), monthly: r2(itemMonthly(it)) })),
+      monthly: r2(monthly), monthlyCost: r2(monthlyCost), costSource, carriesHours,
+      items: items.map((it) => {
+        const p = prices[String(it.articleId)];
+        return {
+          title: it.title || article[String(it.articleId)]?.name || 'Position', quantity: n(it.quantity || 1), monthly: r2(itemMonthly(it)),
+          service: isService(it.articleId), purchase: p != null ? r2(p * n(it.quantity || 1) * (INTERVAL_PER_MONTH[it.interval] ?? 0)) : null,
+        };
+      }),
     });
     entry.since = Math.min(entry.since, Math.max(n(c.startDate) || from, from));
     entry.monthly += monthly;
@@ -178,13 +204,20 @@ export async function maintenanceReport(token, { months = 12, rate, type = '', h
   }
 
   // Stunden je Kunde – bei Vertragskunden erst ab Vertragsbeginn, damit Ertrag und Aufwand denselben Zeitraum haben
+  // Vom Vertrag abgedeckt = nie fakturiert. Verrechenbare Stunden der letzten 45 Tage ohne Rechnung
+  // sind vermutlich nur noch nicht abgerechnet ("offen") und zählen nicht gegen den Vertrag.
   const hoursByParty = {};
   for (const r of records) {
-    const since = byParty.get(String(r.customerId))?.since ?? from;
+    const e = byParty.get(String(r.customerId));
+    const since = e ? (e.serviceSince ?? e.since) : from;
     if (n(r.startDate) < since) continue;
-    const h = (hoursByParty[r.customerId] ||= { total: 0, billable: 0 });
-    h.total += n(r.durationSeconds) / 3600;
-    h.billable += n(r.billableDurationSeconds ?? (r.billable ? r.durationSeconds : 0)) / 3600;
+    const h = (hoursByParty[r.customerId] ||= { total: 0, invoiced: 0, open: 0, covered: 0 });
+    const dur = n(r.durationSeconds) / 3600;
+    const billable = n(r.billableDurationSeconds ?? (r.billable ? r.durationSeconds : 0)) / 3600;
+    h.total += dur;
+    if (r.salesInvoiceId || r.billableInvoiceStatus === 'INVOICED' || r.billableInvoiceStatus === 'PARTLY_INVOICED') h.invoiced += dur;
+    else if (billable > 0 && now - n(r.startDate) < 45 * D) h.open += dur;
+    else h.covered += dur;
   }
 
   // ---------- Kunden ohne Vertrag ----------
@@ -216,17 +249,17 @@ export async function maintenanceReport(token, { months = 12, rate, type = '', h
   const parties = await byIds(token, '/party', [...byParty.keys(), ...withoutIds], 'id,company,firstName,lastName,customerNumber,customer').catch(() => []);
   const party = Object.fromEntries(parties.map((p) => [String(p.id), p]));
 
-  const counted = (h) => (h ? (countAll ? h.total : Math.max(0, h.total - h.billable)) : 0);
   const customers = [...byParty.values()].map((e) => {
     const h = hoursByParty[e.partyId];
-    const hoursCounted = counted(h);
+    // Nur Verträge mit eigener Leistung tragen Stunden; reine Lizenz-/Aboverträge nicht
+    const hoursCounted = e.serviceSince == null || !h ? 0 : countAll ? h.total : h.covered;
     const laborCost = hoursCounted * rate;
     const margin = e.revenue - e.licenseCost - laborCost;
     return {
-      partyId: e.partyId, since: e.since > from ? e.since : null, name: party[e.partyId] ? partyName(party[e.partyId]) : `Kunde ${e.partyId}`, number: party[e.partyId]?.customerNumber || '',
+      partyId: e.partyId, since: e.since > from ? e.since : null, carriesHours: e.serviceSince != null, name: party[e.partyId] ? partyName(party[e.partyId]) : `Kunde ${e.partyId}`, number: party[e.partyId]?.customerNumber || '',
       contracts: e.contracts, monthly: r2(e.monthly), monthlyCost: r2(e.monthlyCost),
       revenue: r2(e.revenue), licenseCost: r2(e.licenseCost),
-      hoursTotal: r2(h?.total || 0), hoursBillable: r2(h?.billable || 0), hoursCounted: r2(hoursCounted), laborCost: r2(laborCost),
+      hoursTotal: r2(h?.total || 0), hoursInvoiced: r2(h?.invoiced || 0), hoursOpen: r2(h?.open || 0), hoursCounted: r2(hoursCounted), laborCost: r2(laborCost),
       margin: r2(margin), marginPct: e.revenue ? Math.round((margin / e.revenue) * 100) : null,
       // was eine Stunde nach Lizenzen tatsächlich bringt
       yieldPerHour: hoursCounted > 0.25 ? r2((e.revenue - e.licenseCost) / hoursCounted) : null,
@@ -239,7 +272,7 @@ export async function maintenanceReport(token, { months = 12, rate, type = '', h
         const c = candidates.get(id), h = hoursByParty[id];
         return {
           partyId: id, name: party[id] ? partyName(party[id]) : `Kunde ${id}`, number: party[id]?.customerNumber || '',
-          revenue12: r2(c.revenue12), hours: r2(h?.total || 0), hoursBillable: r2(h?.billable || 0), atera: c.atera, otherContract: anyContract.has(id),
+          revenue12: r2(c.revenue12), hours: r2(h?.total || 0), hoursInvoiced: r2(h?.invoiced || 0), hoursUnbilled: r2((h?.covered || 0) + (h?.open || 0)), atera: c.atera, otherContract: anyContract.has(id),
         };
       })
       .filter((x) => !party[x.partyId] || party[x.partyId].customer !== false)
@@ -255,13 +288,15 @@ export async function maintenanceReport(token, { months = 12, rate, type = '', h
   totals.marginPct = totals.revenue ? Math.round((totals.margin / totals.revenue) * 100) : null;
   totals.losing = customers.filter((c) => c.margin < 0).length;
 
-  if (missingPrice) notes.push(`${missingPrice} Vertragsposition${missingPrice === 1 ? '' : 'en'} ohne Einkaufspreis und ohne Kostenposition – mit 0 € Lizenzkosten gerechnet.`);
+  const missing = [...missingArticles.values()].sort((a, b) => b.contracts - a.contracts || a.name.localeCompare(b.name, 'de'));
+  if (missing.length) notes.push(`${missing.length} Artikel ohne Einkaufspreis – mit 0 € Lizenzkosten gerechnet (Liste unten).`);
   notes.push(
     'Ertrag = wiederkehrender Vertragswert (netto), anteilig für die Laufzeit im Zeitraum. Einmalige Positionen zählen nicht.',
     'Lizenzkosten = Kostenpositionen im weclapp-Vertrag; fehlen diese, Menge × Einkaufspreis des Artikels (Bezugsquelle, sonst Kalkulationspreis).',
+    'Stunden tragen nur Verträge mit eigener Leistung: Dienstleistungsartikel ohne Einkaufspreis oder Artikel/Kategorie mit „Wartung“ im Namen. Reine Lizenz- und Aboverträge zeigen nur die Lizenzmarge.',
     countAll
       ? `Stundenkosten = alle beim Kunden gebuchten Stunden × ${rate} €/h.`
-      : `Stundenkosten = nicht verrechenbare Stunden × ${rate} €/h (verrechenbare Stunden werden extra fakturiert).`,
+      : `Stundenkosten = nie fakturierte Stunden × ${rate} €/h. Fakturierte Stunden zählen nicht; verrechenbare Stunden der letzten 45 Tage ohne Rechnung gelten als „noch offen“ und zählen ebenfalls nicht.`,
     'Kunden ohne Vertrag = Kunden mit Rechnungen in den letzten 12 Monaten, mit Zeitbuchungen im Zeitraum oder in Atera verwaltet.',
   );
 
@@ -274,8 +309,8 @@ export async function maintenanceReport(token, { months = 12, rate, type = '', h
   ].filter(Boolean);
 
   return {
-    generatedAt: now, period: { from, to: now, months }, rate, hours: countAll ? 'all' : 'nonbillable',
+    generatedAt: now, period: { from, to: now, months }, rate, hours: countAll ? 'all' : 'unbilled',
     types: types.map((t) => ({ ...t, count: typeCounts[t.id] || 0 })).filter((t) => t.count || t.active), selectedType: type ? String(type) : '',
-    hoursError, articleError, totals, customers, without, notes, diag,
+    hoursError, articleError, totals, customers, without, notes, diag, missingPrices: missing,
   };
 }
