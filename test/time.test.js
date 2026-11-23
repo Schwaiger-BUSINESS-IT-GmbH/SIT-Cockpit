@@ -35,3 +35,17 @@ test('Buchung auf eine Aufgabe geht durch und erscheint unter „bereits gebucht
   const json = JSON.stringify(booked);
   assert.ok(json.includes('Test'), 'neue Buchung fehlt in „bereits gebucht“');
 });
+
+test('v0.8.0: Ticket anlegen, Aufgabe anlegen, Ticket schließen', async () => {
+  const opts = await wc.ticketFormOptions('demo-rene');
+  assert.ok(opts.priorities.length && opts.types.length);
+  const { ticket } = await wc.createTicket('demo-rene', { partyId: '501', subject: 'Neues Ticket aus SIT-Time', assignedUserId: '101', priorityId: 'p2', typeId: 'tt1' });
+  assert.ok(ticket.id && ticket.number);
+  assert.equal(ticket.customer, 'Bäckerei Huber GmbH');
+  const task = await wc.createTicketTask('demo-rene', { ticketId: ticket.id, subject: ticket.subject, articleId: '701', userId: '101' });
+  assert.ok(task.id);
+  const r = await wc.closeTicket('demo-rene', ticket.id, 'Erledigt per Fernwartung');
+  assert.equal(r.statusId, '3'); // „Geschlossen“
+  const customers = await wc.searchCustomers('demo-rene', 'Huber');
+  assert.ok(customers.some((c) => c.id === '501'));
+});

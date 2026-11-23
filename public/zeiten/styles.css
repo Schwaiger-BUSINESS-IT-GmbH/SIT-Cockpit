@@ -279,5 +279,18 @@ input[type=time], input[type=date], input[type=text] {
   .bk-times > div:first-child { grid-column: 1 / -1; }
 }
 
+/* Neues Ticket */
+.head-actions { display: flex; align-items: center; gap: .6rem; }
+.picker { position: relative; }
+.picker-list { position: absolute; left: 0; right: 0; top: 100%; z-index: 5; margin-top: 4px; max-height: 260px; overflow: auto; box-shadow: var(--shadow); }
+.picker-list li { cursor: pointer; }
+.picker-list li:hover, .picker-list li.active { background: color-mix(in srgb, var(--ci-green) 12%, transparent); }
+.nt-timer { margin-top: 1rem; }
+.toggles { display: flex; flex-wrap: wrap; gap: .4rem 1.4rem; margin-top: 1rem; }
+.toggles .toggle { margin-top: 0; }
+#bk-close-hint { margin-top: .3rem; }
+.error.info { color: var(--muted); }
+.section-head { flex-wrap: wrap; gap: .4rem; }
+
 /* Eingebettet im SIT-Cockpit: eigene Kopfzeile ausblenden (Cockpit hat Login/Logout) */
 .embedded .topbar { display: none; }

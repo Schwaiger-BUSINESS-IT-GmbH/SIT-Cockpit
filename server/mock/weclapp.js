@@ -168,7 +168,7 @@ r.get('/meta/openapi.json', (req, res) => res.json({ paths: {
   '/ticket/count': { get: {} }, '/attendance/logOn': { post: {} },
 }, components: { schemas: {
   timeRecord: { properties: Object.fromEntries(TR_FIELDS.map((f) => [f, {}])) },
-  task: P('id', 'subject', 'articleId', 'entityReferences'),
+  task: P('id', 'subject', 'articleId', 'entityReferences', 'assignees'),
   quotation: P('id', 'customerId', 'quotationNumber', 'quotationDate', 'validTo', 'status', 'netAmount', 'grossAmount', 'commission', 'recordComment', 'quotationItems'),
   quotationItem: P('articleId', 'quantity', 'unitPrice', 'manualUnitPrice', 'positionNumber', 'title', 'description', 'discountPercentage'),
   salesOrder: P('orderNumber', 'orderDate', 'customerId', 'netAmount', 'status', 'quotationId', 'invoiced'),
@@ -176,7 +176,8 @@ r.get('/meta/openapi.json', (req, res) => res.json({ paths: {
   party: P('company', 'customer', 'customerNumber', 'partyType', 'email', 'phone', 'addresses', 'firstName', 'lastName'),
   contract: P('partyId', 'contractStatus', 'contractItems', 'contractNumber'),
   contractItem: P('interval', 'intervalType', 'netAmount', 'unitPrice', 'quantity', 'articleId'),
-  ticket: P('ticketNumber', 'subject', 'partyId', 'ticketStatusId', 'assignedUserId', 'lastModifiedDate'),
+  ticket: P('ticketNumber', 'subject', 'partyId', 'contactId', 'ticketStatusId', 'assignedUserId', 'ticketPriorityId', 'ticketTypeId', 'solution', 'lastModifiedDate'),
+  comment: P('id', 'entityName', 'entityId', 'comment', 'publicComment'),
   article: P('articleNumber', 'name', 'articlePrices', 'active'),
   offerStatusType: { enum: ['OPEN', 'ENTRY_COMPLETED', 'INQUIRED', 'ACCEPTED', 'REJECTED', 'CANCELLED'] },
   orderStatusType: { enum: ['ORDER_ENTRY_IN_PROGRESS', 'ORDER_CONFIRMATION_PRINTED', 'CLOSED', 'MANUALLY_CLOSED', 'CANCELLED'] },

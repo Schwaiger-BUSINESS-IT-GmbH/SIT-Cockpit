@@ -177,13 +177,33 @@ export function registerSales(r, { applyFilters, parties, tickets, timeRecords, 
   r.get('/ticketChannel', list([{ id: 'c1', name: 'Telefon', positionNumber: 1 }, { id: 'c2', name: 'E-Mail', positionNumber: 2 }, { id: 'c3', name: 'Monitoring', positionNumber: 3 }]));
   r.post('/ticket', (req, res) => {
     const b = req.body || {};
-    const missing = ['partyId', 'subject', 'ticketStatusId', 'ticketPriorityId', 'ticketChannelId'].filter((k) => !b[k]);
+    // Cockpit (Ticket aus Problem) setzt Status/Priorität/Kanal; SIT-Time nur Kunde + Betreff -> Status-Standard
+    const missing = ['partyId', 'subject'].filter((k) => !b[k]);
     if (missing.length) return res.status(400).json({ title: 'validation failed', messages: missing.map((k) => ({ location: k, message: 'required' })) });
-    const t = { id: String(9000 + tickets.length), ticketNumber: `T-${10231 + tickets.length}`, ...b, assignedUserId: b.assignedUserId || null, lastModifiedDate: Date.now() };
+    const t = { id: String(9000 + tickets.length), ticketNumber: `T-${10231 + tickets.length}`, ticketStatusId: '1', version: '0', ...b, assignedUserId: b.assignedUserId || null, lastModifiedDate: Date.now() };
     tickets.push(t);
     console.log('[mock] Ticket angelegt:', t.ticketNumber, t.subject, 'Prio', t.ticketPriorityId, 'Mail aus:', t.disableEmailTemplates);
     res.status(201).json(t);
   });
+  // SIT-Time v0.8.0: Ticket anlegen/schließen, Aufgabe anlegen, Kommentar
+  r.get('/ticketType', list([{ id: 'tt1', name: 'Störung' }, { id: 'tt2', name: 'Anfrage' }]));
+  r.get('/ticketCategory', (req, res) => res.status(404).json({ title: 'Not Found' }));
+  r.get('/ticket/id/:id', (req, res) => { const t = tickets.find((x) => x.id === req.params.id); t ? res.json(t) : res.status(404).json({ title: 'Not Found' }); });
+  r.put('/ticket/id/:id', (req, res) => {
+    const t = tickets.find((x) => x.id === req.params.id);
+    if (!t) return res.status(404).json({ title: 'Not Found' });
+    Object.assign(t, req.body, { lastModifiedDate: Date.now() });
+    console.log('[mock] Ticket aktualisiert:', t.ticketNumber, 'Status', t.ticketStatusId);
+    res.json(t);
+  });
+  r.post('/task', (req, res) => {
+    const t = { id: String(6100 + tasks.length), version: '0', ...req.body };
+    tasks.push(t);
+    console.log('[mock] Aufgabe angelegt:', JSON.stringify(t));
+    res.status(201).json(t);
+  });
+  const comments = [];
+  r.post('/comment', (req, res) => { comments.push(req.body); res.status(201).json({ id: String(70000 + comments.length), ...req.body }); });
   r.get('/article/id/:id', (req, res) => {
     const a = articles.find((x) => x.id === req.params.id);
     a ? res.json(a) : res.status(404).json({ title: 'Not Found' });

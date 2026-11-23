@@ -11,9 +11,9 @@
   <link rel="apple-touch-icon" href="/zeiten/icons/icon-192.png">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <link rel="stylesheet" href="/zeiten/styles.css">
+  <script>if (window.top !== window) document.documentElement.classList.add("embedded");</script>
 </head>
 <body>
-  <script>if (window.top !== window) document.documentElement.classList.add("embedded");</script>
   <!-- Login -->
   <main id="view-login" class="login" hidden>
     <div class="login-card">
@@ -57,7 +57,10 @@
       <section>
         <div class="section-head">
           <h2>Ticket starten</h2>
-          <label class="toggle"><input type="checkbox" id="mine" checked> Nur meine</label>
+          <div class="head-actions">
+            <label class="toggle"><input type="checkbox" id="mine" checked> Nur meine</label>
+            <button class="btn small" id="nt-open" type="button">+ Neues Ticket</button>
+          </div>
         </div>
         <input id="search" type="search" placeholder="Ticketnummer, Betreff oder Kunde suchen…" autocomplete="off">
         <ul id="tickets" class="list"></ul>
@@ -125,6 +128,43 @@
       <p class="center"><button class="btn ghost small" id="work-settings">⚙ Sollzeit &amp; Urlaubsanspruch</button></p>
     </main>
   </div>
+
+  <!-- Neues Ticket -->
+  <dialog id="nt-dialog">
+    <form method="dialog" id="nt-form" autocomplete="off">
+      <header>
+        <div><div class="ticket-no">weclapp</div><div class="ticket-subject">Neues Ticket</div></div>
+        <button type="button" class="btn ghost small" data-close aria-label="Schließen">✕</button>
+      </header>
+      <label for="nt-customer">Kunde</label>
+      <div class="picker">
+        <input type="search" id="nt-customer" placeholder="Firma, Name oder Kundennummer…" required>
+        <ul id="nt-customer-list" class="list compact picker-list" hidden></ul>
+      </div>
+      <div id="nt-contact-wrap" hidden>
+        <label for="nt-contact">Ansprechpartner</label>
+        <select id="nt-contact"><option value="">– keiner –</option></select>
+      </div>
+      <label for="nt-subject">Betreff</label>
+      <input type="text" id="nt-subject" maxlength="250" required placeholder="Kurz: was ist das Problem?">
+      <label for="nt-desc">Beschreibung</label>
+      <textarea id="nt-desc" rows="4" placeholder="Details, Fehlermeldung, Rückrufnummer …"></textarea>
+      <div class="two">
+        <div><label for="nt-user">Bearbeiter</label><select id="nt-user"></select></div>
+        <div id="nt-prio-wrap"><label for="nt-prio">Priorität</label><select id="nt-prio"></select></div>
+      </div>
+      <div class="two">
+        <div id="nt-type-wrap"><label for="nt-type">Ticketart</label><select id="nt-type"></select></div>
+        <div id="nt-cat-wrap"><label for="nt-cat">Kategorie</label><select id="nt-cat"></select></div>
+      </div>
+      <label class="toggle nt-timer"><input type="checkbox" id="nt-timer" checked> Timer gleich starten</label>
+      <p class="error" id="nt-error" hidden></p>
+      <div class="actions">
+        <button type="button" class="btn ghost" data-close>Abbrechen</button>
+        <button type="submit" class="btn primary" id="nt-submit">Ticket anlegen</button>
+      </div>
+    </form>
+  </dialog>
 
   <!-- Tag bearbeiten -->
   <dialog id="day-dialog">
@@ -249,7 +289,11 @@
       <label for="bk-desc">Beschreibung der Tätigkeit</label>
       <textarea id="bk-desc" rows="5" required placeholder="Was wurde gemacht?"></textarea>
 
-      <label class="toggle"><input type="checkbox" id="bk-billable" checked> Abrechenbar</label>
+      <div class="toggles">
+        <label class="toggle"><input type="checkbox" id="bk-billable" checked> Abrechenbar</label>
+        <label class="toggle"><input type="checkbox" id="bk-close-ticket"> Ticket danach schließen</label>
+      </div>
+      <div class="muted small" id="bk-close-hint" hidden>Die Beschreibung wird als Lösung ins Ticket übernommen.</div>
 
       <p id="bk-error" class="error" hidden></p>
       <div class="actions">

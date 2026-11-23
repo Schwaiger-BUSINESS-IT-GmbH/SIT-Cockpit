@@ -472,9 +472,8 @@ export async function diagnoseTicket(token, ticketNumber) {
 
 // Diagnose: welche Dokument-Endpunkte bietet der Mandant? (für Foto-Upload)
 export async function documentEndpoints(token) {
-  const origin = new URL(config.weclappBaseUrl).origin;
-  const ver = /\/v1\/?$/.test(config.weclappBaseUrl) ? 'v1' : 'v2';
-  const res = await fetch(`${origin}/webapp/api/${ver}/meta/openapi.json`, { headers: { AuthenticationToken: token }, signal: AbortSignal.timeout(20000) });
+  // Basis-URL ist .../webapp/api/v1|v2 (im Demo-Modus mit Mock-Präfix) -> openapi.json liegt direkt darunter
+  const res = await fetch(`${config.weclappBaseUrl.replace(/\/+$/, '')}/meta/openapi.json`, { headers: { AuthenticationToken: token }, signal: AbortSignal.timeout(20000) });
   if (!res.ok) return { error: `HTTP ${res.status}` };
   const doc = await res.json();
   const out = {};
@@ -490,9 +489,8 @@ export async function documentEndpoints(token) {
 let openapiCache = null;
 async function openapi(token) {
   if (openapiCache && Date.now() - openapiCache.at < 6 * 3600e3) return openapiCache.doc;
-  const origin = new URL(config.weclappBaseUrl).origin;
-  const ver = /\/v1\/?$/.test(config.weclappBaseUrl) ? 'v1' : 'v2';
-  const res = await fetch(`${origin}/webapp/api/${ver}/meta/openapi.json`, { headers: { AuthenticationToken: token }, signal: AbortSignal.timeout(20000) });
+  // Basis-URL ist .../webapp/api/v1|v2 (im Demo-Modus mit Mock-Präfix) -> openapi.json liegt direkt darunter
+  const res = await fetch(`${config.weclappBaseUrl.replace(/\/+$/, '')}/meta/openapi.json`, { headers: { AuthenticationToken: token }, signal: AbortSignal.timeout(20000) });
   if (!res.ok) throw new WeclappError(res.status, `openapi.json: HTTP ${res.status}`);
   const doc = await res.json();
   openapiCache = { at: Date.now(), doc };
@@ -669,4 +667,178 @@ export async function uploadDocument(token, { entityName, entityId, fileName, co
     throw new WeclappError(res.status, `Dokument-Upload fehlgeschlagen: ${msg}`, { spec, body });
   }
   return unwrap(body);
+}
+
+// ============================================================
+// ---------- Tickets anlegen & schließen ----------
+// ============================================================
+// Feldnamen werden aus openapi.json des Mandanten gelesen (v2-Felder unterscheiden sich je Version).
+async function entityProps(token, name) {
+  try {
+    const doc = await openapi(token);
+    const sch = (doc.components?.schemas || doc.definitions || {})[name];
+    return sch ? schemaProps(doc, sch) : null;
+  } catch { return null; }
+}
+const pickKey = (props, ...names) => names.find((n) => props && n in props) || null;
+const labelOf = (x) => x.name || x.description || x.label || [x.firstName, x.lastName].filter(Boolean).join(' ') || String(x.id);
+
+async function listNamed(token, path, extra = {}) {
+  try {
+    const rows = unwrap(await request(token, 'GET', path, { query: { pageSize: 200, ...extra } })) || [];
+    return rows.filter((x) => x.active !== false).map((x) => ({ id: String(x.id), name: labelOf(x), raw: x }));
+  } catch { return []; }
+}
+
+// Kunden für das Anlegen suchen (Firma, Nachname, Kundennummer)
+export async function searchCustomers(token, term) {
+  term = String(term || '').trim();
+  if (term.length < 2) return [];
+  const props = await entityProps(token, 'party');
+  const base = { properties: 'id,company,firstName,lastName,customerNumber,partyType', pageSize: 15 };
+  if (props && 'customer' in props) base['customer-eq'] = true;
+  const q = (field) => request(token, 'GET', '/party', { query: { ...base, [`${field}-ilike`]: `%${term}%` } }).then(unwrap).catch(() => []);
+  const lists = await Promise.all([q('company'), q('lastName'), q('customerNumber')]);
+  const seen = new Set();
+  return lists.flat().filter((p) => (seen.has(p.id) ? false : seen.add(p.id))).slice(0, 15).map((p) => ({
+    id: String(p.id),
+    name: p.company || [p.firstName, p.lastName].filter(Boolean).join(' '),
+    number: p.customerNumber || '',
+  }));
+}
+
+// Ansprechpartner eines Kunden (v2: eingebettet im Kunden oder als eigene Personen)
+export async function customerContacts(token, partyId) {
+  try {
+    const party = unwrap(await request(token, 'GET', `/party/id/${encodeURIComponent(partyId)}`));
+    const key = Object.keys(party || {}).find((k) => /contact/i.test(k) && Array.isArray(party[k]));
+    if (key) {
+      const items = party[key];
+      const ids = items.map((c) => c.contactId || c.partyId).filter(Boolean);
+      const named = items.filter((c) => c.firstName || c.lastName || c.name);
+      if (named.length) return named.map((c) => ({ id: String(c.id || c.contactId), name: labelOf(c) }));
+      if (ids.length) {
+        const rows = unwrap(await request(token, 'GET', '/party', { query: { 'id-in': JSON.stringify(ids), properties: 'id,firstName,lastName', pageSize: 100 } }));
+        return rows.map((c) => ({ id: String(c.id), name: labelOf(c) }));
+      }
+    }
+  } catch { /* weiter mit Fallback */ }
+  for (const path of ['/contact']) {
+    try {
+      const rows = unwrap(await request(token, 'GET', path, { query: { 'customerId-eq': partyId, pageSize: 100 } }));
+      if (rows?.length) return rows.map((c) => ({ id: String(c.id), name: labelOf(c) }));
+    } catch { /* gibt es nicht */ }
+  }
+  return [];
+}
+
+// Auswahllisten für den Anlegen-Dialog
+export async function ticketFormOptions(token) {
+  const props = await entityProps(token, 'ticket');
+  const has = (k) => !props || k in props;
+  const [users, priorities, types, categories] = await Promise.all([
+    has('assignedUserId') ? listNamed(token, '/user', { 'active-eq': true, properties: 'id,firstName,lastName,username,active' }) : [],
+    pickKey(props, 'ticketPriorityId', 'priorityId') ? listNamed(token, '/ticketPriority') : [],
+    pickKey(props, 'ticketTypeId') ? listNamed(token, '/ticketType') : [],
+    pickKey(props, 'ticketCategoryId') ? listNamed(token, '/ticketCategory') : [],
+  ]);
+  const strip = (l) => l.map(({ id, name }) => ({ id, name }));
+  return {
+    users: strip(users).sort((a, b) => a.name.localeCompare(b.name, 'de')),
+    priorities: strip(priorities), types: strip(types), categories: strip(categories),
+    fields: {
+      contact: Boolean(pickKey(props, 'contactId', 'contactPersonId')),
+      description: Boolean(pickKey(props, 'description', 'ticketDescription', 'htmlDescription')),
+    },
+  };
+}
+
+// Text als Kommentar am Ticket (wenn das Ticket kein Beschreibungs-/Lösungsfeld hat)
+async function addTicketComment(token, ticketId, text) {
+  const props = await entityProps(token, 'comment');
+  const body = { entityName: 'ticket', entityId: String(ticketId) };
+  const textKey = pickKey(props, 'comment', 'htmlComment', 'text') || 'comment';
+  body[textKey] = textKey === 'htmlComment' ? escHtml(text).replace(/\n/g, '<br>') : text;
+  if (props && 'publicComment' in props) body.publicComment = false;
+  return request(token, 'POST', '/comment', { body });
+}
+const escHtml = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+export async function createTicket(token, f) {
+  const props = await entityProps(token, 'ticket');
+  const body = { partyId: String(f.partyId), subject: String(f.subject) };
+  const set = (val, ...keys) => { const k = pickKey(props, ...keys); if (k && val) body[k] = String(val); return k; };
+  set(f.contactId, 'contactId', 'contactPersonId');
+  set(f.assignedUserId, 'assignedUserId');
+  set(f.priorityId, 'ticketPriorityId', 'priorityId');
+  set(f.typeId, 'ticketTypeId');
+  set(f.categoryId, 'ticketCategoryId');
+  const descKey = f.description ? set(f.description, 'description', 'ticketDescription') : null;
+  if (f.description && !descKey && props && 'htmlDescription' in props) body.htmlDescription = escHtml(f.description).replace(/\n/g, '<br>');
+  const t = unwrap(await request(token, 'POST', '/ticket', { body }));
+  let note = null;
+  if (f.description && !descKey && !body.htmlDescription) {
+    try { await addTicketComment(token, t.id, f.description); } catch (e) { note = `Beschreibung konnte nicht als Kommentar gespeichert werden: ${e.message}`; }
+  }
+  const parties = await partyNames(token, [t.partyId]);
+  return { ticket: { id: String(t.id), number: t.ticketNumber || '', subject: t.subject || f.subject, customer: parties[t.partyId] || '' }, note };
+}
+
+// Ziel-Status "geschlossen": nach Typ-Feld (falls vorhanden), sonst nach Name
+async function closedStatusId(token) {
+  const rows = (await listNamed(token, '/ticketStatus')).map((s) => s.raw);
+  const byType = rows.find((s) => Object.entries(s).some(([k, v]) => /type|category|state/i.test(k) && /^(CLOSED|DONE|SOLVED|RESOLVED|FINISHED)$/i.test(String(v))));
+  if (byType) return String(byType.id);
+  const prefer = [/^geschlossen$/i, /^erledigt$/i, /^abgeschlossen$/i, /^gelöst$/i, /^closed$/i, /^done$/i, /^resolved$/i];
+  for (const re of prefer) { const s = rows.find((x) => re.test(x.name || '')); if (s) return String(s.id); }
+  if (config.hiddenStatusPattern) {
+    const re = new RegExp(config.hiddenStatusPattern, 'i');
+    const s = rows.find((x) => re.test(x.name || '') && !/storn/i.test(x.name || ''));
+    if (s) return String(s.id);
+  }
+  return null;
+}
+
+export async function closeTicket(token, ticketId, solution) {
+  const statusId = await closedStatusId(token);
+  if (!statusId) throw Object.assign(new Error('Kein Ticketstatus „Geschlossen/Erledigt“ in weclapp gefunden'), { status: 400 });
+  const path = `/ticket/id/${encodeURIComponent(ticketId)}`;
+  const t = unwrap(await request(token, 'GET', path));
+  const props = await entityProps(token, 'ticket');
+  const solKey = pickKey(props || t, 'solution', 'solutionText', 'resolution');
+  const body = { ...t, ticketStatusId: statusId };
+  if (solution && solKey) body[solKey] = t[solKey] ? `${t[solKey]}\n\n${solution}` : solution;
+  await request(token, 'PUT', path, { body });
+  statusCache.at = 0;
+  if (solution && !solKey) {
+    try { await addTicketComment(token, ticketId, `Lösung: ${solution}`); } catch { /* Status ist gesetzt */ }
+  }
+  return { statusId };
+}
+
+// Diagnose: Ticket-Felder und Hilfslisten
+export async function ticketDebug(token) {
+  const out = {};
+  for (const n of ['ticket', 'ticketStatus', 'ticketPriority', 'ticketType', 'ticketCategory', 'comment']) {
+    const p = await entityProps(token, n);
+    out[n] = p ? Object.keys(p) : null;
+  }
+  const party = await entityProps(token, 'party');
+  out.partyContactFields = party ? Object.keys(party).filter((k) => /contact|customer/i.test(k)) : null;
+  out.statuses = (await listNamed(token, '/ticketStatus')).map((s) => s.raw);
+  out.closedStatusId = await closedStatusId(token);
+  return out;
+}
+
+// Neue Dienstleistungsaufgabe am Ticket anlegen (neue Tickets haben noch keine)
+export async function createTicketTask(token, { ticketId, subject, articleId, userId }) {
+  const props = await entityProps(token, 'task');
+  const body = { subject: String(subject || 'Dienstleistung').slice(0, 250) };
+  if (!props || 'ticketId' in props) body.ticketId = String(ticketId);
+  if (props && 'entityReferences' in props) body.entityReferences = [{ entityId: String(ticketId), entityName: 'ticket' }];
+  if (articleId && (!props || 'articleId' in props)) body.articleId = String(articleId);
+  const aKey = props ? Object.keys(props).find((k) => /assignee/i.test(k)) : 'assignees';
+  if (aKey && userId) body[aKey] = [{ userId: String(userId) }];
+  const t = unwrap(await request(token, 'POST', '/task', { body }));
+  return { id: String(t.id) };
 }

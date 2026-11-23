@@ -94,7 +94,7 @@ $('#login-form').addEventListener('submit', async (e) => {
     const me = await api('/me');
     state.user = user;
     state.settings = me.settings;
-    state.version = me.version;
+    state.version = me.timeVersion || me.version;
     showApp();
   } catch (ex) {
     err.textContent = ex.message;
@@ -429,7 +429,10 @@ async function openBooking(timer) {
   $('#bk-desc').value = [timer.note || '', nPhotos ? `(${nPhotos} ${nPhotos === 1 ? 'Foto' : 'Fotos'} im Ticket angehängt)` : '']
     .filter(Boolean).join('\n');
   $('#bk-billable').checked = true;
+  $('#bk-close-ticket').checked = false;
+  $('#bk-close-hint').hidden = true;
   $('#bk-error').hidden = true;
+  $('#bk-error').classList.remove('info');
   updateHours();
   dlg.showModal();
   setTimeout(() => $('#bk-desc').focus(), 50);
@@ -467,10 +470,17 @@ async function openBooking(timer) {
       }
       updateArticleNeed();
     } else if (o.taskRequired) {
-      state.bookingMode = 'task';
-      lbl.textContent = 'Aufgabe';
-      sel.innerHTML = '<option value="">Keine Aufgabe am Ticket</option>';
-      showBookError('Dieses Ticket hat keine Dienstleistungsaufgabe. Bitte in weclapp eine Aufgabe anlegen, dann kann gebucht werden.');
+      // Ticket ohne Aufgabe (z.B. frisch angelegt): Aufgabe wird beim Buchen mit dieser Dienstleistung angelegt
+      state.bookingMode = 'newtask';
+      lbl.textContent = 'Dienstleistung (neue Aufgabe)';
+      const last = ls('sit.lastArticle');
+      sel.innerHTML = '<option value="">– bitte wählen –</option>' +
+        o.articles.map((x) => `<option value="${esc(x.id)}">${esc(x.name)}${x.number ? ` (${esc(x.number)})` : ''}</option>`).join('');
+      if (last && o.articles.some((x) => x.id === last)) sel.value = last;
+      else if (o.articles.length === 1) sel.value = o.articles[0].id;
+      $('#bk-article-wrap').hidden = true;
+      if (!o.articles.length) showBookError('Das Ticket hat noch keine Aufgabe und es wurden keine Dienstleistungsartikel gefunden.');
+      else { const el = $('#bk-error'); el.textContent = 'Das Ticket hat noch keine Aufgabe – sie wird beim Buchen mit dieser Dienstleistung angelegt.'; el.hidden = false; el.classList.add('info'); }
     } else {
       state.bookingMode = 'article';
       lbl.textContent = 'Dienstleistung';
@@ -541,6 +551,7 @@ function closeBooking() {
 
 function showBookError(msg) {
   const el = $('#bk-error');
+  el.classList.remove('info');
   el.textContent = msg;
   el.hidden = false;
 }
@@ -595,6 +606,7 @@ $('#book-form').addEventListener('submit', async (e) => {
   const body = {
     taskId: state.bookingMode === 'task' ? $('#bk-target').value : undefined,
     articleId: state.bookingMode === 'article' ? $('#bk-target').value : undefined,
+    createTaskArticleId: state.bookingMode === 'newtask' ? ($('#bk-target').value || undefined) : undefined,
     assignArticleId: needsArticle() ? ($('#bk-article').value || undefined) : undefined,
     addMeAsAssignee: assigneeChoiceNeeded() && $('#bk-user').value === 'me' ? true : undefined,
     bookForUserId: assigneeChoiceNeeded() && $('#bk-user').value !== 'me' ? $('#bk-user').value : undefined,
@@ -603,26 +615,30 @@ $('#book-form').addEventListener('submit', async (e) => {
     durationMinutes: Number($('#bk-minutes').value),
     startTime: timesOpen() ? bookingRange()?.start : undefined,
     billable: $('#bk-billable').checked,
+    closeTicket: $('#bk-close-ticket').checked || undefined,
   };
   if (!body.description) return showBookError('Bitte eine Beschreibung eingeben.');
   if (timesOpen() && !body.startTime) return showBookError('Bitte Datum und Startzeit angeben.');
   if (body.startTime && body.startTime > now() + 5 * 60000) return showBookError('Die Startzeit liegt in der Zukunft.');
-  if (!body.taskId && !body.articleId) return showBookError(state.bookingMode === 'article' ? 'Bitte eine Dienstleistung wählen.' : 'Bitte eine Aufgabe wählen.');
+  if (!body.taskId && !body.articleId && !body.createTaskArticleId) return showBookError(state.bookingMode === 'task' ? 'Bitte eine Aufgabe wählen.' : 'Bitte eine Dienstleistung wählen.');
   if (needsArticle() && !body.assignArticleId) return showBookError('Die Aufgabe hat keinen Dienstleistungsartikel: bitte eine Dienstleistung wählen – oder „Abrechenbar“ abwählen.');
   const btn = $('#bk-submit');
   btn.disabled = true;
   btn.textContent = 'Buche…';
   try {
-    await api(`/timers/${t.id}/book`, { method: 'POST', body });
+    const r = await api(`/timers/${t.id}/book`, { method: 'POST', body });
     try {
-      if (body.articleId || body.assignArticleId) localStorage.setItem('sit.lastArticle', body.articleId || body.assignArticleId);
+      const art = body.articleId || body.assignArticleId || body.createTaskArticleId;
+      if (art) localStorage.setItem('sit.lastArticle', art);
       if (body.taskId) localStorage.setItem(`sit.lastTask.${t.ticket.id}`, body.taskId);
       if (body.placeOfServiceId) localStorage.setItem('sit.lastPlace', body.placeOfServiceId);
     } catch { /* egal */ }
     closeBooking();
     delete state.booked[t.ticket.id];
     loadBooked(t.ticket.id, true);
-    toast(`✓ ${fmtMin(body.durationMinutes)} auf ${t.ticket.number} gebucht`);
+    if (r.closeError) toast(`Gebucht, aber Ticket nicht geschlossen: ${r.closeError}`, true);
+    else toast(`✓ ${fmtMin(body.durationMinutes)} auf ${t.ticket.number} gebucht${r.closed ? ' · Ticket geschlossen' : ''}`);
+    if (r.closed) searchTickets().catch(() => {});
     await loadTimers();
   } catch (ex) {
     showBookError(`Buchung fehlgeschlagen: ${ex.message}. Der Timer bleibt erhalten.`);
@@ -631,6 +647,126 @@ $('#book-form').addEventListener('submit', async (e) => {
     btn.textContent = 'In weclapp buchen';
   }
 });
+
+$('#bk-close-ticket').addEventListener('change', () => { $('#bk-close-hint').hidden = !$('#bk-close-ticket').checked; });
+
+// ---------- Neues Ticket ----------
+const ntDlg = $('#nt-dialog');
+const nt = { party: null, form: null, searchTimer: null, seq: 0 };
+const fillSelect = (sel, items, first, value) => {
+  sel.innerHTML = (first != null ? `<option value="">${esc(first)}</option>` : '') +
+    items.map((x) => `<option value="${esc(x.id)}">${esc(x.name)}</option>`).join('');
+  if (value != null && items.some((x) => String(x.id) === String(value))) sel.value = value;
+};
+function ntError(msg) { const el = $('#nt-error'); el.textContent = msg; el.hidden = !msg; }
+
+$('#nt-open').addEventListener('click', async () => {
+  nt.party = null;
+  $('#nt-form').reset();
+  $('#nt-timer').checked = true;
+  $('#nt-customer-list').hidden = true;
+  $('#nt-contact-wrap').hidden = true;
+  ntError('');
+  // Suchbegriff aus der Ticketsuche als Betreff vorschlagen, wenn er nicht nach Nummer aussieht
+  const q = $('#search').value.trim();
+  if (q && !/^\d+$/.test(q)) $('#nt-subject').value = q;
+  ntDlg.showModal();
+  setTimeout(() => $('#nt-customer').focus(), 50);
+  try {
+    nt.form ??= await api('/ticket-form');
+    const f = nt.form;
+    fillSelect($('#nt-user'), f.users, null, state.user?.id);
+    if (!f.users.some((u) => String(u.id) === String(state.user?.id))) $('#nt-user').insertAdjacentHTML('afterbegin', `<option value="${esc(state.user?.id)}" selected>${esc(state.user?.name || 'Ich')}</option>`);
+    $('#nt-prio-wrap').hidden = !f.priorities.length;
+    fillSelect($('#nt-prio'), f.priorities, '– Standard –');
+    $('#nt-type-wrap').hidden = !f.types.length;
+    fillSelect($('#nt-type'), f.types, '– Standard –');
+    $('#nt-cat-wrap').hidden = !f.categories.length;
+    fillSelect($('#nt-cat'), f.categories, '– keine –');
+    const ls = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
+    for (const [id, key] of [['#nt-prio', 'sit.ntPrio'], ['#nt-type', 'sit.ntType'], ['#nt-cat', 'sit.ntCat']]) {
+      const v = ls(key);
+      if (v && [...$(id).options].some((o) => o.value === v)) $(id).value = v;
+    }
+  } catch (ex) { ntError(`Auswahllisten konnten nicht geladen werden: ${ex.message}`); }
+});
+
+$('#nt-customer').addEventListener('input', () => {
+  nt.party = null;
+  $('#nt-contact-wrap').hidden = true;
+  clearTimeout(nt.searchTimer);
+  const q = $('#nt-customer').value.trim();
+  if (q.length < 2) { $('#nt-customer-list').hidden = true; return; }
+  nt.searchTimer = setTimeout(async () => {
+    const seq = ++nt.seq;
+    try {
+      const { customers } = await api(`/customers?q=${encodeURIComponent(q)}`);
+      if (seq !== nt.seq) return;
+      const list = $('#nt-customer-list');
+      list.innerHTML = customers.length
+        ? customers.map((c) => `<li data-id="${esc(c.id)}" data-name="${esc(c.name)}"><div class="grow"><div class="ticket-subject">${esc(c.name)}</div>${c.number ? `<div class="ticket-customer">Kd.-Nr. ${esc(c.number)}</div>` : ''}</div></li>`).join('')
+        : '<li class="muted">Kein Kunde gefunden</li>';
+      list.hidden = false;
+    } catch (ex) { ntError(ex.message); }
+  }, 250);
+});
+
+$('#nt-customer-list').addEventListener('click', async (e) => {
+  const li = e.target.closest('li[data-id]');
+  if (!li) return;
+  nt.party = { id: li.dataset.id, name: li.dataset.name };
+  $('#nt-customer').value = li.dataset.name;
+  $('#nt-customer-list').hidden = true;
+  ntError('');
+  try {
+    const { contacts } = await api(`/customers/${encodeURIComponent(nt.party.id)}/contacts`);
+    fillSelect($('#nt-contact'), contacts, contacts.length ? '– bitte wählen –' : '– keine hinterlegt –');
+    if (contacts.length === 1) $('#nt-contact').value = contacts[0].id;
+    $('#nt-contact-wrap').hidden = nt.form && !nt.form.fields.contact && !contacts.length;
+  } catch { $('#nt-contact-wrap').hidden = true; }
+  $('#nt-subject').focus();
+});
+
+$('#nt-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (!nt.party) return ntError('Bitte den Kunden aus der Liste auswählen.');
+  const subject = $('#nt-subject').value.trim();
+  if (!subject) return ntError('Bitte einen Betreff eingeben.');
+  const btn = $('#nt-submit');
+  btn.disabled = true; btn.textContent = 'Lege an…';
+  try {
+    const body = {
+      partyId: nt.party.id,
+      contactId: $('#nt-contact-wrap').hidden ? undefined : ($('#nt-contact').value || undefined),
+      subject,
+      description: $('#nt-desc').value.trim(),
+      assignedUserId: $('#nt-user').value || undefined,
+      priorityId: $('#nt-prio-wrap').hidden ? undefined : ($('#nt-prio').value || undefined),
+      typeId: $('#nt-type-wrap').hidden ? undefined : ($('#nt-type').value || undefined),
+      categoryId: $('#nt-cat-wrap').hidden ? undefined : ($('#nt-cat').value || undefined),
+    };
+    const r = await api('/tickets', { method: 'POST', body });
+    try {
+      for (const [k, v] of [['sit.ntPrio', body.priorityId], ['sit.ntType', body.typeId], ['sit.ntCat', body.categoryId]]) if (v) localStorage.setItem(k, v);
+    } catch { /* egal */ }
+    ntDlg.close();
+    if ($('#nt-timer').checked) {
+      const tr = await api('/timers', { method: 'POST', body: { ticket: r.ticket } });
+      await loadTimers();
+      toast(`Ticket ${r.ticket.number} angelegt · Timer läuft${tr.clockedIn ? ' · eingestempelt' : ''}`);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } else {
+      toast(`Ticket ${r.ticket.number} angelegt`);
+    }
+    if (r.note) toast(r.note, true);
+    searchTickets().catch(() => {});
+  } catch (ex) {
+    ntError(`Anlegen fehlgeschlagen: ${ex.message}`);
+  } finally {
+    btn.disabled = false; btn.textContent = 'Ticket anlegen';
+  }
+});
+ntDlg.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => ntDlg.close()));
 
 // ---------- Sync zwischen Geräten ----------
 document.addEventListener('visibilitychange', () => {
@@ -958,7 +1094,7 @@ setInterval(() => {
     const me = await api('/me');
     state.user = me.user;
     state.settings = me.settings;
-    state.version = me.version;
+    state.version = me.timeVersion || me.version;
     showApp();
   } catch {
     showLogin();

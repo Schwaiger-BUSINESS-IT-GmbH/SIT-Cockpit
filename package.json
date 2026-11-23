@@ -13,6 +13,7 @@
     "dev": "node --watch server/index.js",
     "demo": "node scripts/demo.js",
     "test": "node --test test/*.test.js",
+    "sync:zeiten": "node scripts/sync-sit-time.js",
     "check": "node scripts/check.js"
   },
   "dependencies": {

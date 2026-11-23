@@ -15,6 +15,25 @@ export function registerTimeRoutes(api, h) {
     res.json({ tickets });
   }));
   
+  // ---------- Ticket anlegen (SIT-Time v0.8.0) ----------
+  api.get('/customers', h(async (req, res) => res.json({ customers: await wc.searchCustomers(req.session.token, req.query.q) })));
+  api.get('/customers/:id/contacts', h(async (req, res) => res.json({ contacts: await wc.customerContacts(req.session.token, req.params.id) })));
+  api.get('/ticket-form', h(async (req, res) => res.json(await wc.ticketFormOptions(req.session.token))));
+  api.post('/tickets', h(async (req, res) => {
+    const b = req.body || {};
+    const subject = String(b.subject || '').trim();
+    if (!b.partyId) return res.status(400).json({ error: 'Bitte einen Kunden wählen' });
+    if (!subject) return res.status(400).json({ error: 'Betreff ist Pflicht' });
+    const r = await wc.createTicket(req.session.token, {
+      partyId: b.partyId, contactId: b.contactId, subject: subject.slice(0, 250),
+      description: String(b.description || '').trim(),
+      assignedUserId: b.assignedUserId || req.session.userId,
+      priorityId: b.priorityId, typeId: b.typeId, categoryId: b.categoryId,
+    });
+    res.json(r);
+  }));
+  api.get('/debug/ticket', h(async (req, res) => res.json(await wc.ticketDebug(req.session.token))));
+
   api.get('/tickets/:id/booked', h(async (req, res) => {
     res.json(await wc.ticketBookedTimes(req.session.token, req.params.id, req.session.userId));
   }));
@@ -35,8 +54,8 @@ export function registerTimeRoutes(api, h) {
       wc.placesOfService(token),
       wc.timeRecordNeedsTask(token),
     ]);
-    // Artikel auch laden, wenn eine Aufgabe keinen Dienstleistungsartikel hat (wird dann beim Buchen gesetzt)
-    const needArticles = (!tasks.length && fields.articleId !== false) || tasks.some((t) => !t.hasArticle);
+    // Artikel: für Aufgaben ohne Dienstleistung bzw. zum Anlegen einer neuen Aufgabe (Ticket ohne Aufgabe)
+    const needArticles = !tasks.length || tasks.some((t) => !t.hasArticle);
     const articles = needArticles ? await wc.serviceArticles(token).catch(() => []) : [];
     res.json({ tasks, places, articles, taskRequired: fields.taskId === true });
   }));
@@ -93,11 +112,12 @@ export function registerTimeRoutes(api, h) {
   
   // Timer als Zeiterfassung ins weclapp-Ticket zurückschreiben
   api.post('/timers/:id/book', h(async (req, res) => {
-    const { startTime, taskId, articleId, assignArticleId, bookForUserId, addMeAsAssignee, placeOfServiceId, description, durationMinutes, billable = true } = req.body || {};
+    const { createTaskArticleId, closeTicket, startTime, articleId, assignArticleId, bookForUserId, addMeAsAssignee, placeOfServiceId, description, durationMinutes, billable = true } = req.body || {};
     const desc = String(description || '').trim();
     const minutes = Number(durationMinutes);
     if (!desc) return res.status(400).json({ error: 'Beschreibung ist Pflicht' });
-    if (!taskId && !articleId) return res.status(400).json({ error: 'Bitte Aufgabe bzw. Dienstleistung auswählen' });
+    let { taskId } = req.body || {};
+    if (!taskId && !articleId && !createTaskArticleId) return res.status(400).json({ error: 'Bitte Aufgabe bzw. Dienstleistung auswählen' });
     if (!Number.isFinite(minutes) || minutes <= 0 || minutes > 24 * 60) {
       return res.status(400).json({ error: 'Ungültige Dauer' });
     }
@@ -107,6 +127,19 @@ export function registerTimeRoutes(api, h) {
       if (st < Date.now() - 60 * 864e5) return res.status(400).json({ error: 'Startzeit liegt mehr als 60 Tage zurück' });
     }
   
+    // Ticket ohne Aufgabe (z.B. frisch angelegt): Dienstleistungsaufgabe mit dem gewählten Artikel anlegen
+    if (!taskId && createTaskArticleId) {
+      const t0 = store.getTimer(uid(req), req.params.id);
+      if (!t0) return res.status(404).json({ error: 'Timer nicht gefunden' });
+      try {
+        taskId = (await wc.createTicketTask(req.session.token, {
+          ticketId: t0.ticket.id, subject: t0.ticket.subject, articleId: createTaskArticleId, userId: req.session.userId,
+        })).id;
+      } catch (e) {
+        throw Object.assign(new Error(`Aufgabe konnte nicht angelegt werden: ${e.message}`), { status: 502 });
+      }
+    }
+
     // Aufgabe ohne Dienstleistungsartikel: gewählten Artikel zuerst an der Aufgabe hinterlegen
     // Aufgabe gehört jemand anderem: mich als Bearbeiter hinzufügen (sonst lehnt weclapp die Zeit ab)
     let assignee = null;
@@ -166,7 +199,13 @@ export function registerTimeRoutes(api, h) {
       startDate,
       bookedAt: Date.now(),
     });
-    res.json({ ok: true, timeRecordId: record?.id });
+    // Optional: Ticket danach schließen, Buchungstext als Lösung. Fehler hier machen die Buchung nicht ungültig.
+    let closed = false, closeError = null;
+    if (closeTicket) {
+      try { await wc.closeTicket(req.session.token, timer.ticket.id, desc); closed = true; }
+      catch (e) { closeError = e.message; }
+    }
+    res.json({ ok: true, timeRecordId: record?.id, closed, closeError });
   }));
   
   // ---------- Arbeitszeit & Abwesenheiten ----------

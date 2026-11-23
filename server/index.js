@@ -20,6 +20,9 @@ app.disable('x-powered-by');
 app.set('trust proxy', 1);
 
 const VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
+// Version der eingebetteten SIT-Time-Oberfläche (scripts/sync-sit-time.js schreibt sie mit)
+let TIME_VERSION = '';
+try { TIME_VERSION = readFileSync(new URL('../public/zeiten/VERSION', import.meta.url), 'utf8').trim(); } catch { /* ältere Kopie */ }
 app.get('/healthz', (req, res) => res.json({ ok: true, version: VERSION, demo: config.demo }));
 
 // Demo-Modus: Atera- und weclapp-Mock laufen im selben Prozess
@@ -94,6 +97,7 @@ api.get('/me', (req, res) => {
     settings: { roundMinutes: config.roundMinutes },
     tokenStored: !!getStored(req.session.entraId),
     version: VERSION,
+    timeVersion: TIME_VERSION,
     demo: config.demo,
     roles: roles(req),
     links: { weclapp: config.weclappWebUrl, atera: config.ateraWebUrl, terms: config.termsUrl },
