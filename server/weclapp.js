@@ -708,28 +708,68 @@ export async function searchCustomers(token, term) {
 }
 
 // Ansprechpartner eines Kunden (v2: eingebettet im Kunden oder als eigene Personen)
+// Ansprechpartner eines Kunden. weclapp-Versionen unterscheiden sich, daher mehrere Wege:
+// 1) Array im Kunden (contacts / contactPersons …), mit Namen oder nur IDs
+// 2) Personen-Parteien, die per Firmen-/Kunden-Feld auf den Kunden zeigen (laut Schema)
+// 3) eigener Endpunkt /contact
 export async function customerContacts(token, partyId) {
+  const seen = new Set();
+  const out = [];
+  const add = (id, name) => { id = String(id); if (id && name && !seen.has(id) && id !== String(partyId)) { seen.add(id); out.push({ id, name }); } };
+  const resolveIds = async (ids) => {
+    if (!ids.length) return;
+    const rows = unwrap(await request(token, 'GET', '/party', { query: { 'id-in': JSON.stringify(ids), properties: 'id,firstName,lastName,company', pageSize: 100 } })) || [];
+    rows.forEach((c) => add(c.id, labelOf(c)));
+  };
   try {
     const party = unwrap(await request(token, 'GET', `/party/id/${encodeURIComponent(partyId)}`));
-    const key = Object.keys(party || {}).find((k) => /contact/i.test(k) && Array.isArray(party[k]));
-    if (key) {
+    for (const key of Object.keys(party || {}).filter((k) => /contact|person|employee/i.test(k) && Array.isArray(party[k]))) {
       const items = party[key];
-      const ids = items.map((c) => c.contactId || c.partyId).filter(Boolean);
-      const named = items.filter((c) => c.firstName || c.lastName || c.name);
-      if (named.length) return named.map((c) => ({ id: String(c.id || c.contactId), name: labelOf(c) }));
-      if (ids.length) {
-        const rows = unwrap(await request(token, 'GET', '/party', { query: { 'id-in': JSON.stringify(ids), properties: 'id,firstName,lastName', pageSize: 100 } }));
-        return rows.map((c) => ({ id: String(c.id), name: labelOf(c) }));
+      const ids = [];
+      for (const c of items) {
+        if (c && typeof c === 'object') {
+          if (c.firstName || c.lastName || c.name) add(c.contactId || c.partyId || c.personId || c.id, labelOf(c));
+          else { const id = c.contactId || c.partyId || c.personId || c.id; if (id) ids.push(String(id)); }
+        } else if (c) ids.push(String(c));
       }
+      await resolveIds(ids).catch(() => {});
     }
-  } catch { /* weiter mit Fallback */ }
-  for (const path of ['/contact']) {
-    try {
-      const rows = unwrap(await request(token, 'GET', path, { query: { 'customerId-eq': partyId, pageSize: 100 } }));
-      if (rows?.length) return rows.map((c) => ({ id: String(c.id), name: labelOf(c) }));
-    } catch { /* gibt es nicht */ }
+  } catch { /* weiter */ }
+  if (!out.length) {
+    const props = await entityProps(token, 'party');
+    const refKeys = props ? Object.keys(props).filter((k) => /(company|parent|employer|customer|organization)\w*Id$/i.test(k) && !/^id$/i.test(k)) : ['companyId', 'parentPartyId'];
+    for (const k of refKeys) {
+      try {
+        const rows = unwrap(await request(token, 'GET', '/party', { query: { [`${k}-eq`]: partyId, properties: 'id,firstName,lastName,company', pageSize: 100 } })) || [];
+        rows.forEach((c) => add(c.id, labelOf(c)));
+        if (out.length) break;
+      } catch { /* Feld nicht filterbar */ }
+    }
   }
-  return [];
+  if (!out.length) {
+    for (const q of [{ 'customerId-eq': partyId }, { 'partyId-eq': partyId }]) {
+      try {
+        const rows = unwrap(await request(token, 'GET', '/contact', { query: { ...q, pageSize: 100 } })) || [];
+        rows.forEach((c) => add(c.id, labelOf(c)));
+        if (out.length) break;
+      } catch { /* gibt es nicht */ }
+    }
+  }
+  return out.sort((a, b) => a.name.localeCompare(b.name, 'de'));
+}
+
+// Diagnose: wie liefert weclapp die Ansprechpartner eines Kunden?
+export async function contactsDebug(token, partyId) {
+  const out = { partyId };
+  const props = await entityProps(token, 'party');
+  out.partySchemaContactFields = props ? Object.fromEntries(Object.entries(propSummary(await openapi(token), props)).filter(([k]) => /contact|person|employee|company|parent|customer/i.test(k))) : null;
+  try {
+    const party = unwrap(await request(token, 'GET', `/party/id/${encodeURIComponent(partyId)}`));
+    out.partyKeys = Object.keys(party || {});
+    out.partyContactValues = Object.fromEntries(Object.entries(party || {}).filter(([k]) => /contact|person|employee|company|parent/i.test(k)).map(([k, v]) => [k, Array.isArray(v) ? v.slice(0, 3) : v]));
+  } catch (e) { out.partyError = e.message; }
+  out.found = await customerContacts(token, partyId);
+  return out;
 }
 
 // Auswahllisten für den Anlegen-Dialog
@@ -775,19 +815,53 @@ export async function createTicket(token, f) {
   set(f.categoryId, 'ticketCategoryId');
   const descKey = f.description ? set(f.description, 'description', 'ticketDescription') : null;
   if (f.description && !descKey && props && 'htmlDescription' in props) body.htmlDescription = escHtml(f.description).replace(/\n/g, '<br>');
-  const t = unwrap(await request(token, 'POST', '/ticket', { body }));
   let note = null;
+  // Mit Bearbeiter braucht das Ticket einen "zugewiesenen" Status, sonst lehnt weclapp ab
+  if (body.assignedUserId && (!props || 'ticketStatusId' in props)) {
+    const st = await assignedStatusId(token);
+    if (st) body.ticketStatusId = st;
+  }
+  let t;
+  try {
+    t = unwrap(await request(token, 'POST', '/ticket', { body }));
+  } catch (e) {
+    if (!body.assignedUserId || !/assign/i.test(e.message)) throw e;
+    // Fallback: ohne Bearbeiter anlegen, damit das Ticket nicht verloren geht
+    delete body.assignedUserId; delete body.ticketStatusId;
+    t = unwrap(await request(token, 'POST', '/ticket', { body }));
+    note = `Ticket ohne Bearbeiter angelegt (${e.message}). Bitte in weclapp zuweisen.`;
+  }
   if (f.description && !descKey && !body.htmlDescription) {
-    try { await addTicketComment(token, t.id, f.description); } catch (e) { note = `Beschreibung konnte nicht als Kommentar gespeichert werden: ${e.message}`; }
+    try { await addTicketComment(token, t.id, f.description); } catch (e) { note = (note ? note + ' ' : '') + `Beschreibung konnte nicht als Kommentar gespeichert werden: ${e.message}`; }
   }
   const parties = await partyNames(token, [t.partyId]);
   return { ticket: { id: String(t.id), number: t.ticketNumber || '', subject: t.subject || f.subject, customer: parties[t.partyId] || '' }, note };
 }
 
+// Interner Status-Typ eines Ticketstatus (v2: internalTicketStatus = UNASSIGNED, ASSIGNED, CLOSED …)
+function internalStatus(s) {
+  const k = Object.keys(s || {}).find((x) => /internal|type|state|status/i.test(x) && !/id$/i.test(x) && typeof s[x] === 'string' && /^[A-Z_]+$/.test(s[x]));
+  return k ? s[k] : null;
+}
+
+// Status für ein Ticket mit Bearbeiter (weclapp: UNASSIGNED darf keinen Bearbeiter haben)
+async function assignedStatusId(token) {
+  const rows = (await listNamed(token, '/ticketStatus')).map((x) => x.raw);
+  for (const want of ['ASSIGNED', 'IN_PROGRESS', 'OPEN']) {
+    const s = rows.find((x) => internalStatus(x) === want);
+    if (s) return String(s.id);
+  }
+  const s = rows.find((x) => internalStatus(x) && !/UNASSIGNED|CLOSED|SOLVED|DONE|RESOLVED|CANCEL|REJECT|WAIT/.test(internalStatus(x)));
+  if (s) return String(s.id);
+  const byName = rows.find((x) => /^(zugewiesen|in bearbeitung|assigned|in progress)$/i.test(x.name || ''));
+  return byName ? String(byName.id) : null;
+}
+
 // Ziel-Status "geschlossen": nach Typ-Feld (falls vorhanden), sonst nach Name
 async function closedStatusId(token) {
   const rows = (await listNamed(token, '/ticketStatus')).map((s) => s.raw);
-  const byType = rows.find((s) => Object.entries(s).some(([k, v]) => /type|category|state/i.test(k) && /^(CLOSED|DONE|SOLVED|RESOLVED|FINISHED)$/i.test(String(v))));
+  const byType = rows.find((s) => /^(CLOSED|DONE|SOLVED|RESOLVED|FINISHED)$/.test(internalStatus(s) || ''))
+    || rows.find((s) => Object.entries(s).some(([k, v]) => /type|category|state/i.test(k) && /^(CLOSED|DONE|SOLVED|RESOLVED|FINISHED)$/i.test(String(v))));
   if (byType) return String(byType.id);
   const prefer = [/^geschlossen$/i, /^erledigt$/i, /^abgeschlossen$/i, /^gelöst$/i, /^closed$/i, /^done$/i, /^resolved$/i];
   for (const re of prefer) { const s = rows.find((x) => re.test(x.name || '')); if (s) return String(s.id); }
@@ -827,6 +901,7 @@ export async function ticketDebug(token) {
   out.partyContactFields = party ? Object.keys(party).filter((k) => /contact|customer/i.test(k)) : null;
   out.statuses = (await listNamed(token, '/ticketStatus')).map((s) => s.raw);
   out.closedStatusId = await closedStatusId(token);
+  out.assignedStatusId = await assignedStatusId(token);
   return out;
 }
 
@@ -841,4 +916,53 @@ export async function createTicketTask(token, { ticketId, subject, articleId, us
   if (aKey && userId) body[aKey] = [{ userId: String(userId) }];
   const t = unwrap(await request(token, 'POST', '/task', { body }));
   return { id: String(t.id) };
+}
+
+// ============================================================
+// ---------- Ticket-Kommentare (intern / extern) ----------
+// ============================================================
+const htmlToText = (h) => String(h || '')
+  .replace(/<br\s*\/?>/gi, '\n').replace(/<\/(p|div|li|h\d)>/gi, '\n').replace(/<li[^>]*>/gi, '• ')
+  .replace(/<[^>]+>/g, '')
+  .replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&')
+  .replace(/\n{3,}/g, '\n\n').trim();
+
+export async function ticketComments(token, ticketId, myUserId) {
+  let rows = [];
+  try {
+    rows = unwrap(await request(token, 'GET', '/comment', { query: { entityName: 'ticket', entityId: ticketId, pageSize: 200 } })) || [];
+  } catch {
+    rows = unwrap(await request(token, 'GET', '/comment', { query: { 'entityName-eq': 'ticket', 'entityId-eq': ticketId, pageSize: 200 } })) || [];
+  }
+  rows = rows.filter((c) => !c.entityId || String(c.entityId) === String(ticketId));
+  const authorOf = (c) => c.authorUserId ?? c.createdById ?? c.creatorUserId ?? c.userId ?? null;
+  const names = await userNames(token, rows.map(authorOf).filter(Boolean));
+  return rows.map((c) => {
+    const a = authorOf(c);
+    const text = c.htmlComment ? htmlToText(c.htmlComment) : String(c.comment ?? c.text ?? '');
+    const ext = c.publicComment ?? (c.privateComment != null ? !c.privateComment : null) ?? (c.internal != null ? !c.internal : null);
+    return {
+      id: String(c.id),
+      text,
+      external: ext === true,
+      author: a ? (names[a] || `User ${a}`) : (c.authorName || c.author?.name || c.createdBy || 'Kunde / extern'),
+      mine: a != null && String(a) === String(myUserId),
+      date: tsOf(c.createdDate ?? c.creationDate ?? c.lastModifiedDate) || null,
+      parentId: c.parentCommentId ? String(c.parentCommentId) : null,
+    };
+  }).sort((x, y) => (x.date || 0) - (y.date || 0));
+}
+
+export async function addComment(token, ticketId, text, external) {
+  const props = await entityProps(token, 'comment');
+  const body = { entityName: 'ticket', entityId: String(ticketId) };
+  const textKey = pickKey(props, 'comment', 'htmlComment', 'text') || 'comment';
+  body[textKey] = textKey === 'htmlComment' ? escHtml(text).replace(/\n/g, '<br>') : text;
+  const pubKey = pickKey(props, 'publicComment');
+  const privKey = pickKey(props, 'privateComment', 'internal');
+  if (pubKey || !props) body.publicComment = Boolean(external);
+  else if (privKey) body[privKey] = !external;
+  else if (external) throw Object.assign(new Error('Externe Kommentare werden von dieser weclapp-Version nicht unterstützt'), { status: 400 });
+  const c = unwrap(await request(token, 'POST', '/comment', { body }));
+  return { id: String(c?.id ?? '') };
 }

@@ -4,7 +4,7 @@ const D = 864e5;
 const now = Date.now();
 const ago = (days) => now - days * D;
 
-export function registerSales(r, { applyFilters, parties, tickets, timeRecords, tasks, documents, articles }) {
+export function registerSales(r, { applyFilters, parties, tickets, timeRecords, tasks, documents, articles, statuses = [], users = {} }) {
   const categories = [{ id: '900', name: 'Managed Services' }, { id: '901', name: 'Hardware' }];
   const units = [{ id: 'u1', name: 'Stk.' }, { id: 'u2', name: 'Arbeitsplatz' }, { id: 'u3', name: 'Server' }, { id: 'u4', name: 'Benutzer' }, { id: 'u5', name: 'Firewall' }, { id: 'u6', name: 'Pauschale' }, { id: 'u7', name: 'Gerät' }];
   // Realistische weclapp-Artikel: eigene Artikelnummern und Namen, NICHT die Board-Kennungen.
@@ -180,6 +180,9 @@ export function registerSales(r, { applyFilters, parties, tickets, timeRecords, 
     // Cockpit (Ticket aus Problem) setzt Status/Priorität/Kanal; SIT-Time nur Kunde + Betreff -> Status-Standard
     const missing = ['partyId', 'subject'].filter((k) => !b[k]);
     if (missing.length) return res.status(400).json({ title: 'validation failed', messages: missing.map((k) => ({ location: k, message: 'required' })) });
+    // wie weclapp v2: Status vom Typ UNASSIGNED darf keinen Bearbeiter haben
+    const st = statuses.find((x) => x.id === String(b.ticketStatusId || '1'));
+    if (b.assignedUserId && st?.internalTicketStatus === 'UNASSIGNED') return res.status(400).json({ title: 'validation failed', validationErrors: [{ location: 'assignedUserId', message: 'assigned user must be null for internal ticket status: UNASSIGNED' }] });
     const t = { id: String(9000 + tickets.length), ticketNumber: `T-${10231 + tickets.length}`, ticketStatusId: '1', version: '0', ...b, assignedUserId: b.assignedUserId || null, lastModifiedDate: Date.now() };
     tickets.push(t);
     console.log('[mock] Ticket angelegt:', t.ticketNumber, t.subject, 'Prio', t.ticketPriorityId, 'Mail aus:', t.disableEmailTemplates);
@@ -202,8 +205,20 @@ export function registerSales(r, { applyFilters, parties, tickets, timeRecords, 
     console.log('[mock] Aufgabe angelegt:', JSON.stringify(t));
     res.status(201).json(t);
   });
-  const comments = [];
-  r.post('/comment', (req, res) => { comments.push(req.body); res.status(201).json({ id: String(70000 + comments.length), ...req.body }); });
+  // SIT-Time v0.9.0: Ticket-Kommentare intern/extern
+  const comments = [
+    { id: '70001', entityName: 'ticket', entityId: '9000', comment: 'Drucker-Treiber schon einmal neu installiert, hat nichts gebracht.', publicComment: false, authorUserId: '102', createdDate: now - D },
+    { id: '70002', entityName: 'ticket', entityId: '9000', htmlComment: '<p>Guten Tag,<br>der Drucker meldet <b>Papierstau</b>.</p>', publicComment: true, createdDate: now - 2 * 3600e3 },
+  ];
+  r.get('/comment', (req, res) => {
+    if (!req.query.entityName || !req.query.entityId) return res.status(400).json({ title: 'Bad Request', detail: 'entityName and entityId required' });
+    res.json({ result: comments.filter((c) => c.entityName === req.query.entityName && String(c.entityId) === String(req.query.entityId)) });
+  });
+  r.post('/comment', (req, res) => {
+    const c = { id: String(70001 + comments.length), ...req.body, createdDate: Date.now(), authorUserId: users[req.get('AuthenticationToken')]?.id };
+    comments.push(c);
+    res.status(201).json(c);
+  });
   r.get('/article/id/:id', (req, res) => {
     const a = articles.find((x) => x.id === req.params.id);
     a ? res.json(a) : res.status(404).json({ title: 'Not Found' });

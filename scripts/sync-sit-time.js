@@ -6,8 +6,11 @@
 //  - eingebettet im Cockpit-iframe: eigene Kopfzeile ausblenden
 //  - eigener Service Worker (sw.js des Cockpits bleibt), Cache-Version = SIT-Time-Version
 // Die Serverseite (server/time-routes.js, server/weclapp.js) wird NICHT automatisch
-// übernommen – Änderungen dort von Hand nachziehen (git diff im SIT-Time-Repo).
+// übernommen – Änderungen dort von Hand nachziehen. Dafür merkt sich das Skript den
+// übernommenen SIT-Time-Commit (public/zeiten/SOURCE) und listet beim nächsten Lauf
+// alle Server-Änderungen seither auf (Exit-Code 2 = Server nachziehen).
 import fs from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -57,6 +60,23 @@ function main() {
   fs.writeFileSync(swPath, sw.replace(/const CACHE = '[^']*';/, `const CACHE = 'sit-cockpit-zeiten-${version}';`));
   fs.writeFileSync(path.join(dst, 'VERSION'), `${version}\n`);
   console.log(`SIT-Time ${version} nach public/zeiten übernommen.`);
+
+  // Server-Änderungen seit der letzten Übernahme anzeigen (müssen von Hand nachgezogen werden)
+  const git = (...a) => execFileSync('git', ['-C', srcRepo, ...a], { encoding: 'utf8' }).trim();
+  let head;
+  try { head = git('rev-parse', 'HEAD'); } catch { console.warn('Kein git im SIT-Time-Ordner – Server-Änderungen bitte selbst prüfen.'); return; }
+  const srcFile = path.join(dst, 'SOURCE');
+  const prev = fs.existsSync(srcFile) ? fs.readFileSync(srcFile, 'utf8').trim() : '';
+  fs.writeFileSync(srcFile, `${head}\n`);
+  if (!prev) { console.warn('Erste Übernahme mit Commit-Merker: Server-Änderungen bitte einmalig selbst prüfen.'); return; }
+  if (prev === head) return;
+  const stat = git('diff', '--stat', prev, head, '--', 'server');
+  if (stat) {
+    console.warn(`\n!!! SIT-Time-Server hat sich geändert (${prev.slice(0, 7)}..${head.slice(0, 7)}).`
+      + ` In server/weclapp.js, server/time-routes.js und den Mocks nachziehen:\n${stat}\n`
+      + `    Details: git -C ${srcRepo} diff ${prev.slice(0, 7)} ${head.slice(0, 7)} -- server\n`);
+    process.exitCode = 2;
+  }
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main();

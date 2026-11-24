@@ -26,7 +26,7 @@ const parties = [
   contactName: contact,
 }));
 const statuses = [
-  { id: '1', name: 'Offen', positionNumber: 1 }, { id: '2', name: 'In Bearbeitung', positionNumber: 2 }, { id: '3', name: 'Geschlossen', positionNumber: 3 },
+  { id: '1', name: 'Offen', positionNumber: 1, internalTicketStatus: 'UNASSIGNED' }, { id: '2', name: 'In Bearbeitung', positionNumber: 2, internalTicketStatus: 'ASSIGNED' }, { id: '3', name: 'Geschlossen', positionNumber: 3, internalTicketStatus: 'CLOSED' },
 ];
 const now = Date.now();
 const tickets = [
@@ -212,7 +212,7 @@ r.post('/timeRecord', (req, res) => {
 });
 
 export function weclappMock() {
-  registerSales(r, { applyFilters, parties, tickets, timeRecords, tasks, documents, articles });
+  registerSales(r, { applyFilters, parties, tickets, timeRecords, tasks, documents, articles, statuses, users });
   const app = express.Router();
   app.use(express.json({ limit: '2mb' }));
   app.use('/webapp/api/v2', r);

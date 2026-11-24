@@ -49,3 +49,17 @@ test('v0.8.0: Ticket anlegen, Aufgabe anlegen, Ticket schließen', async () => {
   const customers = await wc.searchCustomers('demo-rene', 'Huber');
   assert.ok(customers.some((c) => c.id === '501'));
 });
+
+test('v0.9.x: Ticket-Kommentare intern/extern lesen und schreiben, Ansprechpartner', async () => {
+  const before = await wc.ticketComments('demo-rene', '9000', '101');
+  assert.ok(before.some((c) => !c.external && c.author === 'Max Muster'));
+  assert.ok(before.some((c) => c.external && /Papierstau/.test(c.text) && !/<b>/.test(c.text)));
+  await wc.addComment('demo-rene', '9000', 'Kunde zurückgerufen', false);
+  await wc.addComment('demo-rene', '9000', 'Wir melden uns morgen.', true);
+  const after = await wc.ticketComments('demo-rene', '9000', '101');
+  assert.equal(after.length, before.length + 2);
+  const mine = after.filter((c) => c.mine);
+  assert.deepEqual(mine.map((c) => c.external), [false, true]);
+  const contacts = await wc.customerContacts('demo-rene', '501');
+  assert.ok(Array.isArray(contacts));
+});

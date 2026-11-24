@@ -57,3 +57,9 @@ test('Kundenzuordnung: unscharfer Namensvergleich', async () => {
   assert.equal(cm.bestMatches('NOE', parties).length, 0);
   assert.equal(cm.normName('Muster GmbH & Co. KG'), 'muster');
 });
+
+test('Mit Bearbeiter: Status "Offen" (nicht zugewiesen) wird auf zugewiesenen Status umgestellt', async () => {
+  // weclapp v2 lehnt Bearbeiter bei Status-Typ UNASSIGNED ab (der Mock prüft das genauso)
+  const t = await tk.createTicket('demo-rene', { partyId: '503', subject: 'Mit Bearbeiter', statusId: '1', assignedUserId: '101' }, session);
+  assert.match(t.number, /^T-/);
+});

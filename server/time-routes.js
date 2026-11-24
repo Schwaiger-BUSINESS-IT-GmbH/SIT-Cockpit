@@ -34,6 +34,19 @@ export function registerTimeRoutes(api, h) {
   }));
   api.get('/debug/ticket', h(async (req, res) => res.json(await wc.ticketDebug(req.session.token))));
 
+  // ---------- Ticket-Kommentare (intern / extern), SIT-Time v0.9.0 ----------
+  api.get('/tickets/:id/comments', h(async (req, res) => {
+    res.json({ comments: await wc.ticketComments(req.session.token, req.params.id, req.session.userId) });
+  }));
+  api.post('/tickets/:id/comments', h(async (req, res) => {
+    const text = String(req.body?.text || '').trim();
+    if (!text) return res.status(400).json({ error: 'Kommentar ist leer' });
+    if (text.length > 10000) return res.status(400).json({ error: 'Kommentar ist zu lang (max. 10.000 Zeichen)' });
+    const r = await wc.addComment(req.session.token, req.params.id, text, req.body?.external === true);
+    res.json({ ok: true, ...r });
+  }));
+  api.get('/debug/contacts', h(async (req, res) => res.json(await wc.contactsDebug(req.session.token, String(req.query.party || '')))));
+
   api.get('/tickets/:id/booked', h(async (req, res) => {
     res.json(await wc.ticketBookedTimes(req.session.token, req.params.id, req.session.userId));
   }));

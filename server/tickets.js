@@ -47,7 +47,7 @@ export async function ticketMeta(token, userId) {
     metaCache = {
       at: Date.now(),
       data: {
-        statuses: open.map((s) => ({ id: String(s.id), name: s.name })),
+        statuses: open.map((s) => ({ id: String(s.id), name: s.name, type: s.internalTicketStatus || null })),
         priorities: prios.map((p) => ({ id: String(p.id), name: p.name })),
         channels: chans.map((c) => ({ id: String(c.id), name: c.name || c.value })),
         users: users.filter((u) => !u.status || /active|aktiv/i.test(u.status)).map((u) => ({ id: String(u.id), name: name(u) })).sort((a, b) => a.name.localeCompare(b.name, 'de')),
@@ -86,10 +86,16 @@ export async function createTicket(token, body, session) {
   if (!partyId) throw bad('Kein weclapp-Kunde zugeordnet – Ticket kann nicht angelegt werden');
   if (subject.length < 3) throw bad('Bitte einen Betreff eingeben');
   const meta = await ticketMeta(token, session.userId);
-  const statusId = str(body.statusId) || meta.defaults.statusId;
+  let statusId = str(body.statusId) || meta.defaults.statusId;
   const priorityId = str(body.priorityId) || meta.defaults.priorityWarning;
   const channelId = str(body.channelId) || meta.defaults.channelId;
   if (!statusId || !priorityId || !channelId) throw bad('In weclapp fehlen Ticketstatus, -priorität oder -kanal (Stammdaten prüfen)');
+  // weclapp v2: ein Status vom Typ "nicht zugewiesen" darf keinen Bearbeiter haben -> zugewiesenen Status nehmen
+  const assigned = str(body.assignedUserId, 40);
+  if (assigned && meta.statuses.find((s) => s.id === statusId)?.type === 'UNASSIGNED') {
+    const alt = meta.statuses.find((s) => s.type === 'ASSIGNED') || meta.statuses.find((s) => s.type && !/UNASSIGNED|CLOSED|SOLVED|DONE|RESOLVED|CANCEL|REJECT|WAIT/.test(s.type));
+    if (alt) statusId = alt.id;
+  }
   const desc = `${str(body.description, 8000)}\n\n— angelegt von ${session.name} über das SIT-Cockpit${body.source?.alertId ? ` · Atera-Alert ${body.source.alertId}` : ''}`;
   const t = unwrap(await request(token, 'POST', '/ticket', {
     body: {
@@ -99,7 +105,7 @@ export async function createTicket(token, body, session) {
       ticketStatusId: statusId,
       ticketPriorityId: priorityId,
       ticketChannelId: channelId,
-      ...(body.assignedUserId ? { assignedUserId: str(body.assignedUserId, 40) } : {}),
+      ...(assigned ? { assignedUserId: assigned } : {}),
       disableEmailTemplates: !body.notifyCustomer, // Standard: keine automatische Mail an den Kunden
     },
   }));

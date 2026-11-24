@@ -1,5 +1,5 @@
 // Service Worker (SIT-Time im Cockpit): App-Shell offline verfügbar, API immer live.
-const CACHE = 'sit-cockpit-zeiten-0.8.0';
+const CACHE = 'sit-cockpit-zeiten-0.9.1';
 const B = '/zeiten/';
 const SHELL = [B, B + 'index.html', B + 'styles.css', B + 'app.js', B + 'manifest.webmanifest', B + 'icons/icon-192.png', B + 'img/logo-light.png', B + 'img/logo-dark.png', B + 'fonts/oswald-latin-600-normal.woff2'];
 

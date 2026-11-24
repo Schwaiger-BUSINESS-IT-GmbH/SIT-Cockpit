@@ -129,6 +129,36 @@
     </main>
   </div>
 
+  <!-- Ticket-Kommentare -->
+  <dialog id="cm-dialog">
+    <form method="dialog" id="cm-form">
+      <header>
+        <div><div class="ticket-no" id="cm-number"></div><div class="ticket-subject" id="cm-subject"></div></div>
+        <button type="button" class="btn ghost small" data-close aria-label="Schließen">✕</button>
+      </header>
+      <div class="cm-filter" role="tablist">
+        <button type="button" class="chip" data-cm-filter="all" aria-pressed="true">Alle</button>
+        <button type="button" class="chip" data-cm-filter="internal" aria-pressed="false">Intern</button>
+        <button type="button" class="chip" data-cm-filter="external" aria-pressed="false">Extern</button>
+      </div>
+      <ul id="cm-list" class="cm-list"></ul>
+      <p id="cm-empty" class="empty" hidden>Noch keine Kommentare.</p>
+      <div class="cm-compose">
+        <div class="seg" role="radiogroup" aria-label="Sichtbarkeit">
+          <label><input type="radio" name="cm-vis" value="internal" checked> Intern <span class="muted">(nur Techniker)</span></label>
+          <label><input type="radio" name="cm-vis" value="external"> Extern <span class="muted">(Kunde)</span></label>
+        </div>
+        <textarea id="cm-text" rows="3" placeholder="Interne Notiz für Techniker…"></textarea>
+        <p class="cm-warn" id="cm-warn" hidden>⚠ Extern: Der Kommentar ist für den Kunden sichtbar.</p>
+        <p class="error" id="cm-error" hidden></p>
+        <div class="actions">
+          <button type="button" class="btn ghost" data-close>Schließen</button>
+          <button type="submit" class="btn primary" id="cm-submit">Intern speichern</button>
+        </div>
+      </div>
+    </form>
+  </dialog>
+
   <!-- Neues Ticket -->
   <dialog id="nt-dialog">
     <form method="dialog" id="nt-form" autocomplete="off">

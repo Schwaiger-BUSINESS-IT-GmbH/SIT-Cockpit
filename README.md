@@ -137,7 +137,7 @@ docs/ design/      Konzept, Anforderungen, Design-Entwurf
 
 1. Im SIT-Time-Repo (`../SIT-Time`) die gewünschte Version auschecken.
 2. `npm run sync:zeiten` übernimmt die Oberfläche nach `public/zeiten/` und setzt die Cockpit-Pfade (`/zeiten/`) automatisch.
-3. Server-Änderungen (`server/index.js`, `server/weclapp.js` in SIT-Time) von Hand in `server/time-routes.js` bzw. `server/weclapp.js` nachziehen – `git diff <alt>..<neu> -- server` im SIT-Time-Repo zeigt sie.
+3. Server-Änderungen (`server/index.js`, `server/weclapp.js`, `server/mock-weclapp.js` in SIT-Time) von Hand in `server/time-routes.js`, `server/weclapp.js` bzw. `server/mock/` nachziehen. Das Skript merkt sich den übernommenen SIT-Time-Commit in `public/zeiten/SOURCE` und listet beim nächsten Lauf alle Server-Änderungen seither auf (Exit-Code 2 = es gibt Server-Änderungen). `server/weclapp.js` weicht nur an wenigen Stellen ab, `git diff <alt> <neu> -- server/weclapp.js` aus SIT-Time lässt sich meist direkt mit `patch` anwenden.
 
 ### Security-Seite
 

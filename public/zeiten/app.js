@@ -158,6 +158,7 @@ function renderTimers() {
           : `<button class="btn run" data-act="resume">▶ Weiter</button>`}
         <button class="btn primary" data-act="stop">■ Stopp &amp; buchen</button>
         <button class="btn ghost photo" data-act="photo" title="Foto zum Ticket hochladen" aria-label="Foto hochladen">📷 Foto${t.photos?.length ? `<span class="badge">${t.photos.length}</span>` : ''}</button>
+        <button class="btn ghost comments" data-act="comments" title="Kommentare zum Ticket (intern/extern)" aria-label="Kommentare">💬 Kommentare${state.commentCounts?.[t.ticket.id] ? `<span class="badge">${state.commentCounts[t.ticket.id]}</span>` : ''}</button>
         <button class="btn ghost danger" data-act="discard" title="Timer verwerfen">🗑</button>
       </div>
       <div class="upload-status" data-upload="${t.id}" hidden></div>
@@ -249,6 +250,10 @@ $('#timers').addEventListener('click', async (e) => {
   const id = btn.closest('.timer').dataset.id;
   const act = btn.dataset.act;
   try {
+    if (act === 'comments') {
+      openComments(state.timers.find((x) => x.id === id)?.ticket);
+      return;
+    }
     if (act === 'photo') {
       photoTarget = id;
       $('#photo-input').value = '';
@@ -767,6 +772,91 @@ $('#nt-form').addEventListener('submit', async (e) => {
   }
 });
 ntDlg.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => ntDlg.close()));
+
+// ---------- Ticket-Kommentare (intern / extern) ----------
+const cmDlg = $('#cm-dialog');
+const cm = { ticket: null, items: [], filter: 'all' };
+state.commentCounts = {};
+const cmVis = () => document.querySelector('input[name="cm-vis"]:checked').value;
+const fmtDateTime = (ms) => new Date(ms).toLocaleString('de-AT', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
+
+function updateCmMode() {
+  const ext = cmVis() === 'external';
+  cmDlg.classList.toggle('external-mode', ext);
+  $('#cm-warn').hidden = !ext;
+  $('#cm-text').placeholder = ext ? 'Nachricht an den Kunden…' : 'Interne Notiz für Techniker…';
+  $('#cm-submit').textContent = ext ? 'An Kunden senden' : 'Intern speichern';
+}
+document.querySelectorAll('input[name="cm-vis"]').forEach((r) => r.addEventListener('change', updateCmMode));
+
+function renderComments() {
+  const list = cm.items.filter((c) => cm.filter === 'all' || (cm.filter === 'external') === c.external);
+  $('#cm-list').innerHTML = list.map((c) => `
+    <li class="cm-item ${c.external ? 'external' : 'internal'}">
+      <div class="cm-meta"><span class="cm-tag">${c.external ? 'Extern' : 'Intern'}</span><b>${esc(c.mine ? 'Ich' : c.author)}</b>${c.date ? `<span>${fmtDateTime(c.date)}</span>` : ''}</div>
+      <div class="cm-text">${esc(c.text)}</div>
+    </li>`).join('');
+  $('#cm-empty').hidden = list.length > 0;
+  $('#cm-empty').textContent = cm.items.length ? 'Keine Kommentare in diesem Filter.' : 'Noch keine Kommentare.';
+  document.querySelectorAll('[data-cm-filter]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.cmFilter === cm.filter)));
+  const l = $('#cm-list'); l.scrollTop = l.scrollHeight;
+}
+
+async function loadComments() {
+  const id = cm.ticket.id;
+  const { comments } = await api(`/tickets/${encodeURIComponent(id)}/comments`);
+  if (cm.ticket?.id !== id) return;
+  cm.items = comments;
+  state.commentCounts[id] = comments.length;
+  renderComments();
+}
+
+async function openComments(ticket) {
+  if (!ticket) return;
+  cm.ticket = ticket; cm.items = []; cm.filter = 'all';
+  $('#cm-number').textContent = `${ticket.number}${ticket.customer ? ' · ' + ticket.customer : ''}`;
+  $('#cm-subject').textContent = ticket.subject;
+  $('#cm-list').innerHTML = '<li class="muted small">Kommentare werden geladen…</li>';
+  $('#cm-empty').hidden = true;
+  $('#cm-error').hidden = true;
+  $('#cm-text').value = '';
+  document.querySelector('input[name="cm-vis"][value="internal"]').checked = true;
+  updateCmMode();
+  cmDlg.showModal();
+  try { await loadComments(); } catch (ex) {
+    $('#cm-list').innerHTML = '';
+    const el = $('#cm-error'); el.textContent = `Kommentare konnten nicht geladen werden: ${ex.message}`; el.hidden = false;
+  }
+  setTimeout(() => $('#cm-text').focus(), 50);
+}
+
+document.querySelectorAll('[data-cm-filter]').forEach((b) => b.addEventListener('click', () => { cm.filter = b.dataset.cmFilter; renderComments(); }));
+
+$('#cm-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const text = $('#cm-text').value.trim();
+  const err = $('#cm-error');
+  err.hidden = true;
+  if (!text) { err.textContent = 'Bitte einen Text eingeben.'; err.hidden = false; return; }
+  const external = cmVis() === 'external';
+  if (external && !confirm(`Diesen Kommentar für den Kunden sichtbar speichern?\n\n${text.slice(0, 300)}`)) return;
+  const btn = $('#cm-submit');
+  btn.disabled = true;
+  try {
+    await api(`/tickets/${encodeURIComponent(cm.ticket.id)}/comments`, { method: 'POST', body: { text, external } });
+    $('#cm-text').value = '';
+    toast(external ? 'Kommentar an Kunden gespeichert' : 'Interner Kommentar gespeichert');
+    await loadComments();
+    renderTimers();
+  } catch (ex) {
+    err.textContent = `Speichern fehlgeschlagen: ${ex.message}`; err.hidden = false;
+  } finally {
+    btn.disabled = false;
+    updateCmMode();
+  }
+});
+cmDlg.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => cmDlg.close()));
+cmDlg.addEventListener('close', () => renderTimers());
 
 // ---------- Sync zwischen Geräten ----------
 document.addEventListener('visibilitychange', () => {
