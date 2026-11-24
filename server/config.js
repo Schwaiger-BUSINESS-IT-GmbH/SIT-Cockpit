@@ -22,6 +22,8 @@ export const config = {
     : process.env.WECLAPP_BASE_URL || (tenant ? `https://${tenant}.weclapp.com/webapp/api/v2` : ''),
   // Web-Oberfläche von weclapp (für "In weclapp öffnen"-Links)
   weclappWebUrl: process.env.WECLAPP_WEB_URL || (tenant ? `https://${tenant}.weclapp.com/webapp` : ''),
+  // ---------- SIT-Time (eigene App, wird unter #/zeiten eingebettet) ----------
+  timeUrl: (process.env.TIME_URL || (demo ? 'http://localhost:3100' : 'https://time.schwaiger-it.at')).replace(/\/+$/, ''),
   // ---------- Atera ----------
   ateraBaseUrl: demo ? `${self}/__mock/atera/api/v3` : process.env.ATERA_BASE_URL || 'https://app.atera.com/api/v3',
   ateraApiKey: demo ? 'demo-atera-key' : process.env.ATERA_API_KEY || '',

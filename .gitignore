@@ -4,6 +4,3 @@ data/*
 !data/.gitkeep
 data-demo/
 data-demo/
-.sit-time/
-sync.json
-issue.md

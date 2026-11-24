@@ -14,7 +14,6 @@ import * as security from './security.js';
 import * as secTickets from './security-tickets.js';
 import * as pauses from './pauses.js';
 import { roles, requireFinance } from './access.js';
-import { registerTimeRoutes } from './time-routes.js';
 import { getStored, saveStored, removeStored } from './tokens.js';
 import { setSession, clearSession, requireSession, entraPrincipal, requireEntraIfConfigured } from './session.js';
 
@@ -23,9 +22,6 @@ app.disable('x-powered-by');
 app.set('trust proxy', 1);
 
 const VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
-// Version der eingebetteten SIT-Time-Oberfläche (scripts/sync-sit-time.js schreibt sie mit)
-let TIME_VERSION = '';
-try { TIME_VERSION = readFileSync(new URL('../public/zeiten/VERSION', import.meta.url), 'utf8').trim(); } catch { /* ältere Kopie */ }
 app.get('/healthz', (req, res) => res.json({ ok: true, version: VERSION, demo: config.demo }));
 
 // Demo-Modus: Atera- und weclapp-Mock laufen im selben Prozess
@@ -102,10 +98,9 @@ api.get('/me', (req, res) => {
     settings: { roundMinutes: config.roundMinutes },
     tokenStored: !!getStored(req.session.entraId),
     version: VERSION,
-    timeVersion: TIME_VERSION,
     demo: config.demo,
     roles: roles(req),
-    links: { weclapp: config.weclappWebUrl, atera: config.ateraWebUrl, terms: config.termsUrl },
+    links: { weclapp: config.weclappWebUrl, atera: config.ateraWebUrl, terms: config.termsUrl, time: config.timeUrl },
   });
 });
 
@@ -201,9 +196,6 @@ api.get('/offer/:id/pdf', h(async (req, res) => {
   res.sendFile(file);
 }));
 
-// ---------- SIT-Time (Zeiten) ----------
-registerTimeRoutes(api, h);
-
 app.use('/api', api);
 
 // ---------- Frontend ----------
@@ -213,7 +205,6 @@ app.use(express.static(pub, {
     if (/sw\.js$|index\.html$|\.webmanifest$/.test(file)) res.setHeader('Cache-Control', 'no-cache');
   },
 }));
-app.get('/zeiten/*', (req, res) => res.sendFile('zeiten/index.html', { root: pub }));
 app.get('*', (req, res) => {
   if (req.path.startsWith('/api/')) return res.status(404).json({ error: 'Nicht gefunden' });
   res.sendFile('index.html', { root: pub });

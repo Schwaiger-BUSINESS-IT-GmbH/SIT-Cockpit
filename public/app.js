@@ -146,7 +146,7 @@ async function renderStart() {
   // Alles parallel laden; jeder Bereich zeichnet sich, sobald seine Daten da sind
   const fin = state.me?.roles?.finance;
   const [ov, dash, hist, drafts, timers, cmap, finR, secR] = await Promise.allSettled([
-    api('/atera/overview'), api('/dashboard'), api('/offer/history'), api('/offer/drafts'), api('/timers'), api('/customer-map'),
+    api('/atera/overview'), api('/dashboard'), api('/offer/history'), api('/offer/drafts'), timeFetch('/timers'), api('/customer-map'),
     fin ? api('/finance') : Promise.resolve(null), api('/security/summary'),
   ]);
   if (stale(seq)) return;
@@ -179,7 +179,7 @@ async function renderStart() {
     card('angebot', '#/angebot', 'Angebotsboard', plural(hi.filter((x) => new Date(x.signedAt).getMonth() === new Date().getMonth() && new Date(x.signedAt).getFullYear() === new Date().getFullYear()).length, 'Auftrag', 'Aufträge'), 'diesen Monat unterschrieben',
       [hi[0] ? `Zuletzt: ${esc(hi[0].customer.company || hi[0].customer.name || '')} (${date(hi[0].signedAt)})` : 'Noch kein Auftrag über das Board', dr.length ? `${plural(dr.length, 'gespeicherter Kundenstand', 'gespeicherte Kundenstände')}` : null]),
     (() => {
-      if (!ti) return card('zeiten', '#/zeiten', 'Zeiten', '–', 'Zeiten nicht verfügbar', []);
+      if (!ti) return card('zeiten', '#/zeiten', 'Zeiten', '–', 'SIT-Time öffnen', ['Timer und Buchungen in SIT-Time']);
       const run = (ti.timers || []).find((t) => t.running);
       const today = (ti.history || []).filter((x) => new Date(x.bookedAt).toDateString() === new Date().toDateString());
       const mins = today.reduce((s, x) => s + (Number(x.minutes) || 0), 0);
@@ -1145,8 +1145,39 @@ function renderOffer() {
 // =====================================================================
 // Zeiten (SIT-Time eingebettet)
 // =====================================================================
+// SIT-Time läuft als eigene App (time.schwaiger-it.at) und wird hier nur angezeigt: immer aktuell,
+// dieselben Timer wie am Handy. Die Microsoft-Anmeldung lässt sich nicht einbetten – meldet sich
+// SIT-Time nicht, öffnet "Bei SIT-Time anmelden" sie kurz in einem Popup.
+let timeMsg = null;
+function timeFetch(path) {
+  const url = state.me?.links?.time;
+  if (!url) return Promise.reject(new Error('SIT-Time nicht konfiguriert'));
+  return fetch(`${url}/api${path}`, { credentials: 'include' }).then((r) => (r.ok ? r.json() : Promise.reject(new Error(`SIT-Time ${r.status}`))));
+}
 function renderTime() {
-  content.innerHTML = '<iframe class="time-frame" src="/zeiten/" title="SIT-Time Zeiterfassung"></iframe>';
+  const url = state.me?.links?.time;
+  if (!url) { content.innerHTML = '<div class="banner warn"><div><b>SIT-Time nicht konfiguriert</b>TIME_URL fehlt in der Cockpit-Konfiguration.</div></div>'; return; }
+  const origin = new URL(url).origin;
+  const seq = navSeq;
+  content.innerHTML = `<div class="time-wrap">
+    <iframe class="time-frame" src="${esc(url)}/" title="SIT-Time Zeiterfassung" allow="camera; clipboard-write"></iframe>
+    <div class="time-overlay" hidden><div class="card">
+      <h2>SIT-Time meldet sich nicht</h2>
+      <p class="muted">Meist ist die Microsoft-Anmeldung von SIT-Time abgelaufen. Sie lässt sich nicht im Cockpit anzeigen – ein kleines Fenster öffnet sie, danach geht es hier weiter.</p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn primary" type="button" data-time-login>Bei SIT-Time anmelden</button><a class="btn ghost" href="${esc(url)}/" target="_blank" rel="noopener">In eigenem Tab öffnen</a></div>
+    </div></div></div>`;
+  const frame = content.querySelector('.time-frame');
+  const overlay = content.querySelector('.time-overlay');
+  let alive = false;
+  if (timeMsg) window.removeEventListener('message', timeMsg);
+  timeMsg = (e) => {
+    if (e.origin !== origin || e.data?.type !== 'sit-time') return;
+    if (e.data.state === 'ready' || e.data.state === 'login') { alive = true; overlay.hidden = true; }
+    if (e.data.state === 'auth-ok') { overlay.hidden = true; frame.src = `${url}/`; }
+  };
+  window.addEventListener('message', timeMsg);
+  setTimeout(() => { if (!alive && !stale(seq)) overlay.hidden = false; }, 8000);
+  content.querySelector('[data-time-login]').onclick = () => window.open(`${url}/?popup=1`, 'sit-time-login', 'width=520,height=680');
 }
 
 // ---------- Start ----------

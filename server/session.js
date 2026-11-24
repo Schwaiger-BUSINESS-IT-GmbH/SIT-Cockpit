@@ -4,7 +4,7 @@ import crypto from 'node:crypto';
 import { config } from './config.js';
 import { getStored } from './tokens.js';
 
-const COOKIE = 'sit_session';
+const COOKIE = 'sit_cockpit_session'; // eigener Name: SIT-Time (eingebettet) nutzt sit_session
 const MAX_AGE_DAYS = 30;
 const key = crypto.createHash('sha256').update(config.sessionSecret).digest();
 

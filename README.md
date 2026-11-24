@@ -8,7 +8,7 @@ Steuerzentrale von Schwaiger Business IT – vier Bereiche in einer App, ein Log
 | **Vertrieb & Finanzen** | Offene Angebote (inkl. „nachfassen“), angenommene Angebote, Managed-Service-Umsatz/Monat, offene Aufträge, überfällige Rechnungen, Auftragseingang 6 Monate, eigene Zeit im Monat. | weclapp |
 | **Angebotsboard** | Kunden-Onboarding am Tablet (Gestaltung nach *SIT_Angebotsboard_V4*): Erstaufnahme mit IT-Umgebung, interne Einstufung, Zusatz-SLA + Managed-Service-Katalog mit Staffelpreisen und Leistungsbeschreibungen, Angebotsvorschau, Unterschrift mit dem Finger → (Neu-)Kunde, Angebot (angenommen), Auftrag und PDF in weclapp, danach Onboarding-Checkliste. Umschaltbare Kundenansicht ohne interne Daten. | weclapp |
 | **Security** | Sicherheitsmeldungen von Fortinet, Microsoft (Patchday je Produkt), Synology, Veeam, 3CX u. a. mit CVEs, CVSS, EPSS und „aktiv ausgenutzt“ (CISA KEV); betroffene Kunden aus den Atera-Geräten; Bearbeitungsstatus je Meldung; aus einer Meldung je betroffenem Kunden ein weclapp-Ticket anlegen. Produktliste in `config/security.json`. | CISA, Hersteller, NVD, FIRST, Atera |
-| **Zeiten** | SIT-Time v0.8.0 (Ticket-Zeiterfassung, Ticket anlegen/schließen, Arbeitszeit) – eingebettet, gleicher Login. | weclapp |
+| **Zeiten** | SIT-Time (Ticket-Zeiterfassung, Arbeitszeit) – die eigene App `time.schwaiger-it.at` eingebettet, immer aktuell, dieselben Timer wie am Handy. | SIT-Time |
 
 ## Schnellstart (Demo mit Beispieldaten)
 
@@ -124,34 +124,21 @@ server/
   sales.js         weclapp: Dashboard-Kennzahlen, Kunden
   offers.js        Angebotsboard: Katalog, Berechnung, Entwürfe, Unterschrift → weclapp
   pdf.js           PDF mit Unterschrift
-  weclapp.js       weclapp-Client (aus SIT-Time)
-  time-routes.js   SIT-Time-Routen (Timer, Buchung, Arbeitszeit)
+  weclapp.js       weclapp-Client (ursprünglich aus SIT-Time)
   mock/            Atera- und weclapp-Simulation für den Demo-Modus
 config/angebotsboard.json   Feinsteuerung Angebotsboard
 public/            Cockpit-Oberfläche (ohne Build-Schritt), board.js/.css = Angebotsboard
-public/zeiten/     SIT-Time-Oberfläche (Version in public/zeiten/VERSION, Update: npm run sync:zeiten)
 docs/ design/      Konzept, Anforderungen, Design-Entwurf
 ```
 
-### SIT-Time aktualisieren
+### Zeiten (SIT-Time)
 
-**Automatisch:** Der Workflow `.github/workflows/sync-zeiten.yml` holt stündlich (oder per „Run workflow“) den aktuellen Stand von SIT-Time `main`:
+SIT-Time ist eine eigene App (`https://time.schwaiger-it.at`, Repo `SIT-Time`) und wird unter `#/zeiten` nur **eingebettet** (iframe) – keine Kopie im Cockpit. Damit ist das Cockpit immer auf dem Stand von SIT-Time, und Timer/Arbeitszeit sind dieselben wie am Handy.
 
-- Oberfläche → `public/zeiten/` (Cockpit-Pfade `/zeiten/` werden gesetzt).
-- Server-Änderungen seit dem letzten übernommenen Commit (`public/zeiten/SOURCE`) werden als Patch angewendet: `server/weclapp.js` → `server/weclapp.js`, `server/index.js` → `server/time-routes.js` (Routen sind dort 1:1, nur eingerückt). Danach wird geprüft, ob alle aufgerufenen Funktionen im Cockpit existieren und ob neue Abhängigkeiten fehlen.
-- Alles übernommen und Tests grün → Commit auf `main` und Azure-Deploy.
-- Sonst → Branch `sit-time/v<version>` und Issue „SIT-Time-Übernahme v… : von Hand nachziehen“ mit der Liste; `main` bleibt unverändert. Das Issue wird geschlossen, sobald ein Lauf alles aktuell findet.
-
-Einrichtung (einmalig): Nur-Lese-Deploy-Key für das private SIT-Time-Repo anlegen und als Secret `SIT_TIME_DEPLOY_KEY` im Cockpit hinterlegen:
-
-```bash
-ssh-keygen -t ed25519 -N "" -C "sit-cockpit-sync" -f sit-time-sync
-gh repo deploy-key add sit-time-sync.pub --repo Schwaiger-BUSINESS-IT-GmbH/SIT-Time --title "SIT-Cockpit Sync (nur lesen)"
-gh secret set SIT_TIME_DEPLOY_KEY --repo Schwaiger-BUSINESS-IT-GmbH/SIT-Cockpit < sit-time-sync
-rm sit-time-sync sit-time-sync.pub
-```
-
-**Von Hand** (z. B. wenn das Issue offen ist): im SIT-Time-Repo (`../SIT-Time`) die Version auschecken, `npm run sync:zeiten` ausführen – das Skript macht dasselbe wie der Workflow und meldet, was nicht automatisch ging (Exit-Code 2). Demo-Daten aus `server/mock-weclapp.js` werden nie automatisch übernommen (Cockpit-Mock ist anders aufgebaut).
+- Adresse per `TIME_URL` (Standard `https://time.schwaiger-it.at`, im Demo-Modus `http://localhost:3100`).
+- SIT-Time erlaubt das Einbetten nur für `EMBED_ORIGINS` (dort Standard `https://cockpit.schwaiger-it.at`) und gibt dem Cockpit lesend die eigenen Timer für die Startseiten-Kachel frei. Beides funktioniert, weil `cockpit.` und `time.schwaiger-it.at` dieselbe Site sind (Cookies werden im iframe mitgeschickt).
+- Die Microsoft-Anmeldung lässt sich nicht einbetten. Ist sie bei SIT-Time abgelaufen, zeigt das Cockpit „SIT-Time meldet sich nicht“ mit **Bei SIT-Time anmelden** (kleines Popup); läuft sie während der Arbeit ab, bietet SIT-Time selbst das Popup an.
+- Lokal testen: SIT-Time mit `PORT=3100 EMBED_ORIGINS=http://localhost:3000 npm run demo`, Cockpit mit `npm run demo`.
 
 ### Security-Seite
 
