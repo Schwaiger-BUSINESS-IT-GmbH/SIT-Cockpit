@@ -930,7 +930,7 @@ async function renderSecurity({ refresh = false } = {}) {
         <span>${i.customers.length ? `<b>${plural(i.customers.length, 'Kunde', 'Kunden')} betroffen</b>` : i.inUse ? 'im Einsatz (nicht in Atera erfasst)' : '<span class="muted">bei uns nicht erkannt</span>'}</span>
       </div>
       <details class="sec-details"><summary>Details${i.customers.length ? ', betroffene Kunden' : ''}${i.fix?.length ? ', Lösung' : ''}</summary>
-        ${i.customers.length ? `<div class="sec-block"><b>Betroffene Kunden</b><ul class="sec-cust">${i.customers.map((c) => `<li><a href="#/kunden/${encodeURIComponent(c.id)}">${esc(c.name)}</a> <span class="muted small">${plural(c.devices, 'Gerät', 'Geräte')}</span></li>`).join('')}</ul></div>` : ''}
+        ${i.customers.length ? `<div class="sec-block"><b>Betroffene Kunden</b><ul class="sec-cust">${i.customers.map((c) => `<li><a href="#/kunden/${encodeURIComponent(c.id)}">${esc(c.name)}</a> <span class="muted small">${plural(c.devices, 'Gerät', 'Geräte')}</span>${c.ticket ? ` <span class="chip neutral" title="angelegt von ${esc(c.ticket.by)} am ${date(c.ticket.at)}">Ticket ${esc(c.ticket.number)}</span>` : ''}</li>`).join('')}</ul></div>` : ''}
         ${i.affected?.length ? `<div class="sec-block"><b>Betroffene Versionen</b><ul>${i.affected.map((a) => `<li>${esc(a.replace('|', ' bis '))}</li>`).join('')}</ul></div>` : ''}
         ${i.fix?.length ? `<div class="sec-block"><b>Lösung</b><ul>${i.fix.map((a) => `<li>${esc(a)}</li>`).join('')}</ul></div>` : ''}
         ${i.products?.length && i.source !== 'kev' ? `<div class="sec-block"><b>Produkte</b> <span class="muted">${esc(i.products.slice(0, 12).join(', '))}</span></div>` : ''}
@@ -941,6 +941,7 @@ async function renderSecurity({ refresh = false } = {}) {
         <select data-status aria-label="Bearbeitungsstatus">${Object.entries(SEC_STATUS).map(([k, l]) => `<option value="${k}"${st.status === k ? ' selected' : ''}>${l}</option>`).join('')}</select>
         <input data-note type="text" maxlength="500" placeholder="Notiz: was wurde gemacht, welche Kunden sind offen …" value="${esc(st.note || '')}" aria-label="Notiz">
         <span class="muted small">${st.by ? `${esc(st.by)}, ${dateTime(st.at)}` : ''}</span>
+        ${i.customers.length ? (() => { const done = i.customers.filter((c) => c.ticket).length; return `<button class="btn small sec-tk" type="button" data-tickets>${done === i.customers.length ? `Tickets: ${done}/${done}` : done ? `Tickets anlegen (${done}/${i.customers.length} vorhanden)` : `Tickets anlegen (${i.customers.length})`}</button>`; })() : ''}
       </div>
     </article>`;
   };
@@ -966,6 +967,8 @@ async function renderSecurity({ refresh = false } = {}) {
       };
       el.querySelector('[data-status]').onchange = save;
       el.querySelector('[data-note]').onchange = save;
+      const tk = el.querySelector('[data-tickets]');
+      if (tk) tk.onclick = () => openSecurityTicketDialog(item, () => renderSecurity());
     });
   };
   draw();
@@ -981,6 +984,99 @@ async function renderSecurity({ refresh = false } = {}) {
   const clr = $('#sec-clear-product');
   if (clr) clr.onclick = () => { prefs.product = ''; saveSecPrefs(prefs); renderSecurity(); };
   $('#sec-refresh').onclick = () => renderSecurity({ refresh: true });
+}
+
+// ---------- Tickets aus einer Security-Meldung (je betroffenem Kunden eines) ----------
+async function openSecurityTicketDialog(item, onDone) {
+  const back = document.createElement('div');
+  back.className = 'modal-back';
+  back.innerHTML = '<div class="modal" role="dialog" aria-modal="true" aria-labelledby="stk-title"><p class="loading">Suche weclapp-Kunden und Ticket-Stammdaten …</p></div>';
+  document.body.append(back);
+  const modal = back.querySelector('.modal');
+  const close = () => { back.remove(); document.removeEventListener('keydown', onKey); };
+  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  document.addEventListener('keydown', onKey);
+  back.addEventListener('click', (e) => { if (e.target === back) close(); });
+  let meta, prep;
+  try {
+    [meta, prep] = await Promise.all([api('/atera-tickets/meta'), api(`/security/tickets?key=${encodeURIComponent(item.key)}`)]);
+  } catch (e) {
+    modal.innerHTML = `<div class="banner crit"><div><b>weclapp nicht erreichbar</b>${esc(e.message)}</div></div><button class="btn" type="button" data-close>Schließen</button>`;
+    modal.querySelector('[data-close]').onclick = close;
+    return;
+  }
+  const cves = item.cves.slice(0, 10).join(', ') + (item.cves.length > 10 ? ` (+${item.cves.length - 10})` : '');
+  const subject = `Security: ${item.vendor} – ${item.title}`.slice(0, 150);
+  const lines = [
+    `Sicherheitsmeldung: ${item.title}`,
+    `Hersteller/Produkt: ${item.vendor} · ${item.productLabel}`,
+    item.exploited ? `ACHTUNG: wird aktiv ausgenutzt${item.kev?.ransomware ? ' (auch durch Ransomware)' : ''}${item.kev?.due ? ` · CISA-Frist ${date(item.kev.due)}` : ''}` : null,
+    item.severity ? `Schweregrad: ${SEC_SEV[item.severity]}${item.cvss != null ? ` (CVSS ${nf(item.cvss)})` : ''}` : null,
+    cves ? `CVE: ${cves}` : null,
+    item.affected?.length ? `Betroffene Versionen:\n${item.affected.map((a) => `- ${a.replace('|', ' bis ')}`).join('\n')}` : null,
+    item.fix?.length ? `Lösung:\n${item.fix.map((a) => `- ${a}`).join('\n')}` : null,
+    `Hersteller-Info: ${item.url}`,
+    '',
+    'Aufgabe: installierte Version prüfen und, falls betroffen, Update einspielen bzw. Workaround umsetzen.',
+  ].filter((x) => x != null).join('\n');
+  const prio = item.exploited || item.severity === 'critical' ? meta.defaults.priorityCritical : meta.defaults.priorityWarning;
+  const opt = (list, sel) => list.map((x) => `<option value="${esc(x.id)}" ${String(x.id) === String(sel) ? 'selected' : ''}>${esc(x.name)}</option>`).join('');
+  const can = (c) => c.party && !c.ticket;
+  const custRow = (c) => `<li><label class="check"><input type="checkbox" value="${esc(c.id)}"${can(c) ? ' checked' : ' disabled'}>
+    <span><b>${esc(c.name)}</b>${c.party?.number ? ` <span class="muted small">${esc(c.party.number)}</span>` : ''}
+    ${c.ticket ? ` <span class="chip neutral">Ticket ${esc(c.ticket.number)}</span>` : !c.party ? ' <span class="chip warning">kein weclapp-Kunde</span>' : ''}
+    ${c.devices.length ? `<br><span class="muted small">${esc(c.devices.slice(0, 6).join(', '))}${c.devices.length > 6 ? ` +${c.devices.length - 6}` : ''}</span>` : ''}</span></label></li>`;
+  const missing = prep.customers.filter((c) => !c.party && !c.ticket).length;
+  modal.innerHTML = `
+    <h2 id="stk-title" style="margin-bottom:4px">Tickets anlegen</h2>
+    <p class="muted" style="margin:0 0 14px">${esc(item.vendor)} · ${esc(item.title)}<br>Je ausgewähltem Kunden ein Ticket in weclapp, die betroffenen Geräte aus Atera werden ergänzt.</p>
+    ${missing ? `<div class="banner info"><div><b>${plural(missing, 'Kunde', 'Kunden')} ohne weclapp-Zuordnung</b>Unter <a href="#/zuordnung">Kundenzuordnung</a> verknüpfen, dann lassen sich auch dafür Tickets anlegen.</div></div>` : ''}
+    <form id="stk-form">
+      <div class="field"><label>Kunden <span class="muted small" id="stk-count"></span> <button class="btn small ghost" type="button" id="stk-all">alle / keine</button></label><ul class="stk-cust">${prep.customers.map(custRow).join('')}</ul></div>
+      <div class="field"><label for="stk-subject">Betreff</label><input id="stk-subject" maxlength="150" required value="${esc(subject)}"></div>
+      <div class="field"><label for="stk-desc">Beschreibung</label><textarea id="stk-desc" rows="9">${esc(lines)}</textarea></div>
+      <div class="grid-2" style="gap:0 14px">
+        <div class="field"><label for="stk-prio">Priorität</label><select id="stk-prio">${opt(meta.priorities, prio)}</select></div>
+        <div class="field"><label for="stk-user">Bearbeiter</label><select id="stk-user"><option value="">– niemand –</option>${opt(meta.users, meta.defaults.assignedUserId)}</select></div>
+        <div class="field"><label for="stk-status">Status</label><select id="stk-status">${opt(meta.statuses, meta.defaults.statusId)}</select></div>
+        <div class="field"><label for="stk-channel">Kanal</label><select id="stk-channel">${opt(meta.channels, meta.defaults.channelId)}</select></div>
+      </div>
+      <label class="check"><input type="checkbox" id="stk-notify"><span>Kunden per E-Mail über das neue Ticket informieren (weclapp-Vorlage)</span></label>
+      <div id="stk-result" role="status"></div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap"><button class="btn ghost" type="button" data-close>Abbrechen</button><button class="btn primary" type="submit" id="stk-submit">Tickets anlegen</button></div>
+    </form>`;
+  const boxes = () => [...modal.querySelectorAll('.stk-cust input:not(:disabled)')];
+  const btn = modal.querySelector('#stk-submit');
+  const count = () => { const n = boxes().filter((b) => b.checked).length; modal.querySelector('#stk-count').textContent = `(${n} ausgewählt)`; btn.disabled = !n; btn.textContent = n ? `${plural(n, 'Ticket', 'Tickets')} anlegen` : 'Tickets anlegen'; };
+  boxes().forEach((b) => (b.onchange = count));
+  modal.querySelector('#stk-all').onclick = () => { const on = !boxes().every((b) => b.checked); boxes().forEach((b) => (b.checked = on)); count(); };
+  count();
+  modal.querySelector('[data-close]').onclick = close;
+  modal.querySelector('#stk-form').onsubmit = async (e) => {
+    e.preventDefault();
+    const ids = boxes().filter((b) => b.checked).map((b) => b.value);
+    btn.disabled = true; btn.textContent = 'Wird angelegt …';
+    try {
+      const r = await api('/security/tickets', { method: 'POST', body: {
+        key: item.key, customerIds: ids,
+        subject: modal.querySelector('#stk-subject').value,
+        description: modal.querySelector('#stk-desc').value,
+        priorityId: modal.querySelector('#stk-prio').value,
+        assignedUserId: modal.querySelector('#stk-user').value,
+        statusId: modal.querySelector('#stk-status').value,
+        channelId: modal.querySelector('#stk-channel').value,
+        notifyCustomer: modal.querySelector('#stk-notify').checked,
+      } });
+      const bad = r.results.filter((x) => !x.ticket);
+      if (!bad.length) { close(); toast(`${plural(r.created, 'Ticket', 'Tickets')} angelegt`); onDone?.(); return; }
+      modal.querySelector('#stk-result').innerHTML = `<div class="banner ${r.created ? 'warn' : 'crit'}"><div><b>${r.created} angelegt, ${bad.length} nicht</b>${r.results.map((x) => `${esc(x.name)}: ${x.ticket ? `Ticket ${esc(x.ticket.number)}` : esc(x.error || x.skipped)}`).join('<br>')}</div></div>`;
+      btn.textContent = 'Fertig'; btn.disabled = false;
+      btn.onclick = (ev) => { ev.preventDefault(); close(); onDone?.(); };
+    } catch (ex) {
+      modal.querySelector('#stk-result').innerHTML = `<p class="error" role="alert">${esc(ex.message)}</p>`;
+      count();
+    }
+  };
 }
 
 // =====================================================================

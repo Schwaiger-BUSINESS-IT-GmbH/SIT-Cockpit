@@ -11,6 +11,7 @@ process.env.PORT = '3393';
 process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'cockpit-sec-'));
 const { securityMock } = await import('../server/mock/security.js');
 const { ateraMock } = await import('../server/mock/atera.js');
+const { weclappMock } = await import('../server/mock/weclapp.js');
 const sec = await import('../server/security.js');
 
 let server;
@@ -18,6 +19,7 @@ before(async () => {
   const app = express();
   app.use('/__mock/security', securityMock());
   app.use('/__mock/atera/api/v3', ateraMock());
+  app.use('/__mock/weclapp', weclappMock());
   await new Promise((r) => { server = app.listen(3393, r); });
 });
 after(() => server.close());
@@ -109,4 +111,29 @@ test('Bearbeitungsstatus wird gespeichert', async () => {
   const r = await sec.securityReport({ days: 90 });
   assert.equal(r.items.find((i) => i.key === 'fortinet:FG-IR-26-273').status.status, 'done');
   assert.throws(() => sec.setStatus('x', { status: 'kaputt' }, 'Rene'));
+});
+
+test('Tickets je betroffenem Kunden, nicht doppelt, Meldung danach in Arbeit', async () => {
+  const st = await import('../server/security-tickets.js');
+  const session = { userId: '101', name: 'Rene Schwaiger' };
+  const key = 'fortinet:gibt-es-nicht';
+  const fgKey = 'fortinet:FG-IR-26-266';
+  const prep = await st.prepare('demo-rene', fgKey);
+  assert.ok(prep.customers.length >= 5);
+  const mapped = prep.customers.filter((c) => c.party);
+  assert.ok(mapped.length >= 1, JSON.stringify(prep.customers));
+  assert.ok(prep.customers.every((c) => c.devices.length));
+  const ids = prep.customers.map((c) => c.id);
+  const r = await st.create('demo-rene', { key: fgKey, customerIds: ids, subject: 'Security: FortiOS', description: 'Bitte prüfen' }, session);
+  assert.equal(r.created, mapped.length);
+  assert.ok(r.results.filter((x) => !x.ticket).every((x) => /weclapp-Kunde/.test(x.skipped)));
+  const again = await st.create('demo-rene', { key: fgKey, customerIds: ids, subject: 'Security: FortiOS', description: 'x' }, session);
+  assert.equal(again.created, 0);
+  assert.ok(again.results.some((x) => /besteht schon/.test(x.skipped)));
+  const rep = await sec.securityReport({ days: 90 });
+  const it = rep.items.find((i) => i.key === fgKey);
+  assert.equal(it.status.status, 'progress');
+  assert.equal(it.customers.filter((c) => c.ticket).length, mapped.length);
+  await assert.rejects(st.create('demo-rene', { key, customerIds: ['1'], subject: 'x' }, session), /nicht gefunden/);
+  await assert.rejects(st.create('demo-rene', { key: fgKey, customerIds: [], subject: 'x' }, session), /mindestens/);
 });

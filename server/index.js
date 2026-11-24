@@ -11,6 +11,7 @@ import * as custmap from './customermap.js';
 import * as finance from './finance.js';
 import { maintenanceReport } from './maintenance.js';
 import * as security from './security.js';
+import * as secTickets from './security-tickets.js';
 import { roles, requireFinance } from './access.js';
 import { registerTimeRoutes } from './time-routes.js';
 import { getStored, saveStored, removeStored } from './tokens.js';
@@ -122,6 +123,8 @@ api.put('/security/status', h(async (req, res) => {
   if (!key || typeof key !== 'string' || key.length > 120) return res.status(400).json({ error: 'Meldung fehlt' });
   res.json(security.setStatus(key, { status, note }, req.session.name || req.session.userId));
 }));
+api.get('/security/tickets', h(async (req, res) => res.json(await secTickets.prepare(req.session.token, req.query.key))));
+api.post('/security/tickets', h(async (req, res) => res.json(await secTickets.create(req.session.token, req.body || {}, req.session))));
 
 api.get('/atera/customers/:id', h(async (req, res) => {
   const c = await atera.overview();

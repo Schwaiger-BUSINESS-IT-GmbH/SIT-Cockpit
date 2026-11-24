@@ -363,4 +363,9 @@ a.kpi-link .sub { color: var(--link); }
 .sec-status { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
 .sec-status select, .sec-status input { height: 34px; padding: 0 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); font: inherit; font-size: 13px; }
 .sec-status input { flex: 1; min-width: 180px; }
+.sec-status .sec-tk { margin-left: auto; }
+.stk-cust { list-style: none; margin: 4px 0 0; padding: 0; max-height: 240px; overflow: auto; border: 1px solid var(--border); border-radius: 6px; }
+.stk-cust li { padding: 6px 10px; border-bottom: 1px solid var(--border); }
+.stk-cust li:last-child { border-bottom: 0; }
+.stk-cust .check { align-items: flex-start; margin: 0; }
 @media (max-width: 700px) { .sec-date { margin-left: 0; width: 100%; } }

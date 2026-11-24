@@ -26,7 +26,7 @@ const rx = (s) => (s ? new RegExp(s, 'i') : null);
 const n = (v) => (v == null || v === '' || Number.isNaN(Number(v)) ? null : Number(v));
 const uniq = (a) => [...new Set(a.filter(Boolean))];
 const CVE_RE = /CVE-\d{4}-\d{4,}/g;
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms).unref());
 
 export function loadSettings() {
   const raw = JSON.parse(fs.readFileSync(cfgFile, 'utf8'));
@@ -249,6 +249,27 @@ export function setStatus(key, { status, note }, user) {
   return all[key];
 }
 
+// ---------------------------------------------------------------- Tickets je Meldung und Kunde
+const ticketsFile = () => path.join(config.dataDir, 'security-tickets.json');
+export const ticketLinks = (key) => readJson(ticketsFile(), {})[key] || {};
+export function recordTicket(key, customerId, ticket, user) {
+  const all = readJson(ticketsFile(), {});
+  all[key] = { ...(all[key] || {}), [String(customerId)]: { id: String(ticket.id), number: ticket.number, by: user || '', at: Date.now() } };
+  writeJson(ticketsFile(), all);
+  return all[key][String(customerId)];
+}
+
+/** Betroffene Kunden einer Meldung mit ihren Geräten (für die Ticket-Anlage) */
+export async function itemForTickets(key) {
+  const r = await securityReport({ days: 365 });
+  const it = r.items.find((x) => x.key === key);
+  if (!it) return null;
+  const ov = await atera.overview().catch(() => ({ inventory: [] }));
+  const devices = matchInventory(loadSettings().products, ov.inventory || [])[it.productId] || [];
+  const byId = new Map(devices.map((c) => [String(c.id), c.devices]));
+  return { ...it, customers: it.customers.map((c) => ({ ...c, deviceList: byId.get(String(c.id)) || [] })), ateraCustomers: ov.customers || [] };
+}
+
 // ---------------------------------------------------------------- Abgleich
 /** Kunden/Geräte je Produkt aus der Atera-Geräteliste */
 export function matchInventory(products, inventory) {
@@ -397,6 +418,7 @@ export async function securityReport({ days = 90, force = false } = {}) {
   const ov = await atera.overview().catch(() => ({ inventory: [] }));
   const affected = matchInventory(settings.products, ov.inventory || []);
   const status = readJson(statusFile(), {});
+  const tickets = readJson(ticketsFile(), {});
 
   let items = buildItems({ settings, sources, now }).filter((it) => (it.published || it.updated || 0) >= from || (it.exploited && (it.kev?.added || 0) >= from));
   await loadEpss(uniq(items.flatMap((i) => i.cves)));
@@ -408,7 +430,7 @@ export async function securityReport({ days = 90, force = false } = {}) {
       ...it,
       productLabel: p?.label || ({ 'fortinet-other': 'Weitere Fortinet-Produkte', 'fortinet-info': 'Fortinet-Hinweis (Drittsoftware)' }[it.productId] || it.productId),
       inUse: Boolean(p && (p.inUse || customers.length)),
-      customers: customers.map((c) => ({ id: c.id, name: c.name, devices: c.devices.length })),
+      customers: customers.map((c) => ({ id: c.id, name: c.name, devices: c.devices.length, ticket: tickets[it.key]?.[String(c.id)] || null })),
       epss: epssVals.length ? Math.max(...epssVals) : null,
       status: status[it.key] || { status: 'new' },
     };
