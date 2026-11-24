@@ -1,0 +1,133 @@
+name: SIT-Time übernehmen
+
+# Holt stündlich den aktuellen Stand von SIT-Time und übernimmt ihn nach public/zeiten
+# (Oberfläche) sowie server/weclapp.js und server/time-routes.js (per Patch).
+#  - alles automatisch übernommen + Tests grün -> Commit auf main + Azure-Deploy
+#  - etwas passt nicht (Patch, fehlende Funktion, neue Abhängigkeit, Tests rot)
+#    -> Branch sit-time/v<version> + Issue "SIT-Time-Übernahme …" mit der Liste, main bleibt unverändert
+#
+# Voraussetzung: Secret SIT_TIME_DEPLOY_KEY = privater Teil eines NUR-LESE-Deploy-Keys
+# des privaten Repos SIT-Time (Einrichtung: README, Abschnitt "SIT-Time aktualisieren").
+
+on:
+  schedule:
+    - cron: '23 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write   # Commit/Branch im Cockpit
+  issues: write     # Hinweis, wenn etwas von Hand nachzuziehen ist
+  actions: write    # Deploy-Workflow anstoßen (Pushes mit GITHUB_TOKEN lösen keinen Push-Trigger aus)
+
+concurrency:
+  group: sync-zeiten
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      HAS_KEY: ${{ secrets.SIT_TIME_DEPLOY_KEY != '' }}
+    steps:
+      - name: Deploy-Key vorhanden?
+        if: env.HAS_KEY != 'true'
+        run: |
+          echo "::error::Secret SIT_TIME_DEPLOY_KEY fehlt – siehe README, Abschnitt 'SIT-Time aktualisieren'."
+          exit 1
+
+      - uses: actions/checkout@v4
+
+      - name: SIT-Time holen (nur lesen)
+        uses: actions/checkout@v4
+        with:
+          repository: Schwaiger-BUSINESS-IT-GmbH/SIT-Time
+          path: .sit-time
+          ssh-key: ${{ secrets.SIT_TIME_DEPLOY_KEY }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Übernehmen
+        id: sync
+        run: |
+          set +e
+          node scripts/sync-sit-time.js .sit-time --report sync.json
+          echo "code=$?" >> "$GITHUB_OUTPUT"
+          echo "version=$(cat public/zeiten/VERSION | tr -d '\r\n')" >> "$GITHUB_OUTPUT"
+          # geändert = mehr als nur der Commit-Merker
+          if [ -n "$(git status --porcelain -- public/zeiten server test | grep -v 'public/zeiten/SOURCE')" ]; then echo "changed=true" >> "$GITHUB_OUTPUT"; fi
+          if [ -n "$(git status --porcelain -- public/zeiten/SOURCE)" ]; then echo "moved=true" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Tests
+        id: test
+        if: steps.sync.outputs.changed == 'true'
+        continue-on-error: true
+        run: npm test
+
+      - name: Git-Benutzer
+        if: steps.sync.outputs.moved == 'true' || steps.sync.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Nur Merker nachführen (keine relevanten Änderungen)
+        if: steps.sync.outputs.changed != 'true' && steps.sync.outputs.moved == 'true' && steps.sync.outputs.code == '0'
+        run: |
+          git add public/zeiten/SOURCE
+          git commit -m "Zeiten: SIT-Time-Stand $(cut -c1-7 public/zeiten/SOURCE) (keine Änderung an Oberfläche/Server)"
+          git push origin HEAD:main
+
+      - name: Auf main übernehmen und deployen
+        if: steps.sync.outputs.changed == 'true' && steps.sync.outputs.code == '0' && steps.test.outcome == 'success'
+        run: |
+          git add public/zeiten server test
+          git commit -m "Zeiten: SIT-Time auf v${{ steps.sync.outputs.version }} (automatisch übernommen)"
+          git push origin HEAD:main
+          gh workflow run deploy.yml --ref main
+
+      - name: Offenes Übernahme-Issue schließen (alles aktuell)
+        if: steps.sync.outputs.code == '0' && (steps.sync.outputs.changed != 'true' || steps.test.outcome == 'success')
+        run: |
+          for n in $(gh issue list --state open --search "SIT-Time-Übernahme in:title" --json number --jq '.[].number'); do
+            gh issue close "$n" --comment "Erledigt: Cockpit ist auf SIT-Time v${{ steps.sync.outputs.version }}."
+          done
+
+      - name: Branch + Issue (von Hand nachziehen)
+        if: steps.sync.outputs.changed == 'true' && (steps.sync.outputs.code != '0' || steps.test.outcome != 'success')
+        run: |
+          V="${{ steps.sync.outputs.version }}"
+          BR="sit-time/v$V"
+          # Branch gibt es schon -> evtl. wird dort nachgearbeitet, nicht überschreiben
+          if git ls-remote --exit-code origin "refs/heads/$BR" >/dev/null; then
+            echo "::warning::Branch $BR existiert bereits – wird nicht überschrieben. Bitte Issue 'SIT-Time-Übernahme' erledigen."
+            exit 0
+          fi
+          git checkout -b "$BR"
+          git add public/zeiten server test
+          git commit -m "Zeiten: SIT-Time v$V (automatisch vorbereitet, von Hand nachziehen)"
+          git push -f origin "$BR"
+          node -e '
+            const r = JSON.parse(require("fs").readFileSync("sync.json", "utf8"));
+            const tests = process.argv[1];
+            const line = (s) => `- ${s.mode === "patch" ? (s.ok ? "✅" : "❌") : s.mode === "info" ? "ℹ️" : "❌"} \`${s.file}\`${s.target && s.target !== s.file ? ` → \`${s.target}\`` : ""}${s.ok === false ? `: Patch passt nicht (${s.error})` : s.mode !== "patch" || !s.ok ? (s.note ? `: ${s.note}` : "") : ": automatisch übernommen"}`;
+            const out = [
+              `SIT-Time **v${r.version}** konnte nicht vollständig automatisch übernommen werden. Die Oberfläche und alles Übernehmbare liegen im Branch \`sit-time/v${r.version}\`; main ist unverändert.`,
+              "", "**Server-Dateien**", ...(r.server.length ? r.server.map(line) : ["- keine Änderungen"]),
+              ...(r.deps.length ? ["", `**Neue Abhängigkeiten** (im Cockpit fehlend): ${r.deps.join(", ")}`] : []),
+              "", `**Tests im Branch:** ${tests === "success" ? "grün" : tests === "skipped" ? "nicht gelaufen" : "rot (siehe Workflow-Lauf)"}`,
+              "", `Unterschiede ansehen (im SIT-Time-Repo): \`git diff ${String(r.prev).slice(0, 7)} ${String(r.head).slice(0, 7)} -- server\``,
+              "", "Nach dem Nachziehen den Branch nach main mergen (oder lokal `npm run sync:zeiten`, nacharbeiten, pushen) – das Issue wird beim nächsten erfolgreichen Lauf geschlossen.",
+            ];
+            require("fs").writeFileSync("issue.md", out.join("\n"));
+          ' "${{ steps.test.outcome }}"
+          TITLE="SIT-Time-Übernahme v$V: von Hand nachziehen"
+          N=$(gh issue list --state open --search "SIT-Time-Übernahme in:title" --json number --jq '.[0].number')
+          if [ -n "$N" ]; then gh issue edit "$N" --title "$TITLE" --body-file issue.md; else gh issue create --title "$TITLE" --body-file issue.md; fi
+          echo "::warning::SIT-Time v$V muss von Hand nachgezogen werden – siehe Issue."

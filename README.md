@@ -135,9 +135,23 @@ docs/ design/      Konzept, Anforderungen, Design-Entwurf
 
 ### SIT-Time aktualisieren
 
-1. Im SIT-Time-Repo (`../SIT-Time`) die gewünschte Version auschecken.
-2. `npm run sync:zeiten` übernimmt die Oberfläche nach `public/zeiten/` und setzt die Cockpit-Pfade (`/zeiten/`) automatisch.
-3. Server-Änderungen (`server/index.js`, `server/weclapp.js`, `server/mock-weclapp.js` in SIT-Time) von Hand in `server/time-routes.js`, `server/weclapp.js` bzw. `server/mock/` nachziehen. Das Skript merkt sich den übernommenen SIT-Time-Commit in `public/zeiten/SOURCE` und listet beim nächsten Lauf alle Server-Änderungen seither auf (Exit-Code 2 = es gibt Server-Änderungen). `server/weclapp.js` weicht nur an wenigen Stellen ab, `git diff <alt> <neu> -- server/weclapp.js` aus SIT-Time lässt sich meist direkt mit `patch` anwenden.
+**Automatisch:** Der Workflow `.github/workflows/sync-zeiten.yml` holt stündlich (oder per „Run workflow“) den aktuellen Stand von SIT-Time `main`:
+
+- Oberfläche → `public/zeiten/` (Cockpit-Pfade `/zeiten/` werden gesetzt).
+- Server-Änderungen seit dem letzten übernommenen Commit (`public/zeiten/SOURCE`) werden als Patch angewendet: `server/weclapp.js` → `server/weclapp.js`, `server/index.js` → `server/time-routes.js` (Routen sind dort 1:1, nur eingerückt). Danach wird geprüft, ob alle aufgerufenen Funktionen im Cockpit existieren und ob neue Abhängigkeiten fehlen.
+- Alles übernommen und Tests grün → Commit auf `main` und Azure-Deploy.
+- Sonst → Branch `sit-time/v<version>` und Issue „SIT-Time-Übernahme v… : von Hand nachziehen“ mit der Liste; `main` bleibt unverändert. Das Issue wird geschlossen, sobald ein Lauf alles aktuell findet.
+
+Einrichtung (einmalig): Nur-Lese-Deploy-Key für das private SIT-Time-Repo anlegen und als Secret `SIT_TIME_DEPLOY_KEY` im Cockpit hinterlegen:
+
+```bash
+ssh-keygen -t ed25519 -N "" -C "sit-cockpit-sync" -f sit-time-sync
+gh repo deploy-key add sit-time-sync.pub --repo Schwaiger-BUSINESS-IT-GmbH/SIT-Time --title "SIT-Cockpit Sync (nur lesen)"
+gh secret set SIT_TIME_DEPLOY_KEY --repo Schwaiger-BUSINESS-IT-GmbH/SIT-Cockpit < sit-time-sync
+rm sit-time-sync sit-time-sync.pub
+```
+
+**Von Hand** (z. B. wenn das Issue offen ist): im SIT-Time-Repo (`../SIT-Time`) die Version auschecken, `npm run sync:zeiten` ausführen – das Skript macht dasselbe wie der Workflow und meldet, was nicht automatisch ging (Exit-Code 2). Demo-Daten aus `server/mock-weclapp.js` werden nie automatisch übernommen (Cockpit-Mock ist anders aufgebaut).
 
 ### Security-Seite
 

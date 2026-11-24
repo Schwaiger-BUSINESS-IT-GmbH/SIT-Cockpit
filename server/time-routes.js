@@ -32,9 +32,7 @@ export function registerTimeRoutes(api, h) {
     });
     res.json(r);
   }));
-  api.get('/debug/ticket', h(async (req, res) => res.json(await wc.ticketDebug(req.session.token))));
-
-  // ---------- Ticket-Kommentare (intern / extern), SIT-Time v0.9.0 ----------
+  // ---------- Ticket-Kommentare ----------
   api.get('/tickets/:id/comments', h(async (req, res) => {
     res.json({ comments: await wc.ticketComments(req.session.token, req.params.id, req.session.userId) });
   }));
@@ -46,6 +44,7 @@ export function registerTimeRoutes(api, h) {
     res.json({ ok: true, ...r });
   }));
   api.get('/debug/contacts', h(async (req, res) => res.json(await wc.contactsDebug(req.session.token, String(req.query.party || '')))));
+  api.get('/debug/ticket', h(async (req, res) => res.json(await wc.ticketDebug(req.session.token))));
 
   api.get('/tickets/:id/booked', h(async (req, res) => {
     res.json(await wc.ticketBookedTimes(req.session.token, req.params.id, req.session.userId));

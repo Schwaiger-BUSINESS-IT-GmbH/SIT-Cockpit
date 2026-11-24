@@ -63,3 +63,8 @@ test('v0.9.x: Ticket-Kommentare intern/extern lesen und schreiben, Ansprechpartn
   const contacts = await wc.customerContacts('demo-rene', '501');
   assert.ok(Array.isArray(contacts));
 });
+
+test('SIT-Time-Routen rufen nur Funktionen auf, die es im Cockpit gibt', async () => {
+  const { missingFunctions } = await import('../scripts/sync-sit-time.js');
+  assert.deepEqual(missingFunctions(), []);
+});
