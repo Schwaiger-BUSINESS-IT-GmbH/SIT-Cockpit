@@ -289,8 +289,11 @@ function drawCustomers(keepFocus = false) {
     ${!problems.length && all.length && f === 'all' && !q ? '<div class="banner ok"><div><b>Alles im grünen Bereich</b>Kein Kunde hat gerade ein Problem.</div></div>' : ''}
     ${fine.length ? `<h2 style="margin:26px 0 10px">Ohne Befund <span class="muted">(${fine.length})</span></h2><div class="tiles compact">${fine.map(tile).join('')}</div>` : ''}
     ${q && !problems.length && !fine.length ? '<p class="empty">Kein Kunde gefunden.</p>' : ''}
+    ${(d.pauses || []).length ? `<div class="card" style="margin-top:26px"><div class="card-head"><h2>Pausierte Meldungen <span class="muted">(${d.pauses.length})</span></h2><span class="muted small">zählen nicht als kritisch oder Warnung</span></div>
+      <div class="table-wrap"><table><tbody>${[...d.pauses].sort((a, b) => a.customerName.localeCompare(b.customerName, 'de')).map((p) => `<tr><td><a href="#/kunden/${encodeURIComponent(p.customerId)}">${esc(p.customerName)}</a>${p.type === 'device' ? ` · ${esc(p.name)}` : ' <span class="muted small">(ganzer Kunde)</span>'}</td><td>${esc(pauseUntil(p))}</td><td class="wrap muted">${esc(p.reason || '')}</td><td class="muted small">${esc(p.by)}, ${date(p.at)}</td><td class="num"><button class="btn small" type="button" data-unpause="${esc(p.key)}" data-name="${esc(p.type === 'device' ? p.name : p.customerName)}">Beenden</button></td></tr>`).join('')}</tbody></table></div></div>` : ''}
   `;
   $('#reload').onclick = () => renderCustomers({ force: true });
+  $$('[data-unpause]').forEach((b) => (b.onclick = () => endPause(b.dataset.unpause, b.dataset.name, () => renderCustomers())));
   $('#cust-search').oninput = (e) => { state.query = e.target.value; drawCustomers(true); };
   $$('[data-filter]').forEach((b) => (b.onclick = () => { state.filter = b.dataset.filter; drawCustomers(); }));
   if (focusId) { const el = document.getElementById(focusId); el?.focus(); if (el && selStart != null) el.setSelectionRange(selStart, selStart); }
@@ -308,9 +311,10 @@ function tile(c) {
     c.staleServers ? `<span>${c.staleServers} veraltet</span>` : '',
     c.counts.critical ? `<span><b>${c.counts.critical}</b> kritisch</span>` : '',
     c.counts.warning ? `<span><b>${c.counts.warning}</b> Warnung</span>` : '',
+    !c.paused && c.pausedDevices ? `<span>${c.pausedDevices} pausiert</span>` : '',
   ].join('');
   return `<a class="tile ${c.status}" href="#/kunden/${encodeURIComponent(c.id)}" title="${esc(c.name)}">
-    <div class="t-head"><span class="t-name">${esc(c.name)}</span>${c.status !== 'ok' ? chip(c.status, c.outage ? 'Ausfall?' : undefined) : ''}</div>
+    <div class="t-head"><span class="t-name">${esc(c.name)}</span>${c.paused ? chip('neutral', 'Pausiert') : c.status !== 'ok' ? chip(c.status, c.outage ? 'Ausfall?' : undefined) : ''}</div>
     ${c.status !== 'ok' ? `<div class="t-problem" title="${esc(c.headline)}">${esc(c.headline || '')}</div>` : ''}
     <div class="t-meta">${c.city ? `<span>${esc(c.city)}</span>` : ''}${meta}</div>
   </a>`;
@@ -331,7 +335,8 @@ async function renderCustomer(id) {
   curDetail = d;
   const w = d.weclapp || {};
   const bad = c.devices.filter((x) => x.status !== 'ok' && !x.stale);
-  const good = c.devices.filter((x) => x.status === 'ok' && !x.stale);
+  const pausedDevs = c.devices.filter((x) => x.paused && x.pausedStatus !== 'ok' && !x.stale);
+  const good = c.devices.filter((x) => x.status === 'ok' && !x.stale && !pausedDevs.includes(x));
   const staleDevs = c.devices.filter((x) => x.stale);
   const val = (sec, f) => (sec && !sec.error ? f(sec) : '–');
   content.innerHTML = `
@@ -339,15 +344,17 @@ async function renderCustomer(id) {
     <div class="page-head">
       <div>
         <div class="eyebrow">Kunde${d.party?.number ? ` · ${esc(d.party.number)}` : ''}${c.city ? ` · ${esc(c.city)}` : ''}</div>
-        <h1>${esc(c.name)} ${chip(c.status)}</h1>
+        <h1>${esc(c.name)} ${c.paused ? chip('neutral', 'Pausiert') : chip(c.status)}</h1>
       </div>
       <div class="page-actions">
         <span class="stamp">Stand: ${ago(d.updatedAt)}</span>
         <a class="btn ghost" href="${esc(c.url)}" target="_blank" rel="noopener">In Atera öffnen</a>
+        ${c.paused ? '' : '<button class="btn ghost" type="button" data-pause-customer>Kunde pausieren</button>'}
         ${d.party ? '<button class="btn ghost" type="button" data-ticket-general>Ticket erstellen</button>' : ''}
         ${d.party ? `<button class="btn primary" id="to-offer" type="button">Angebot erstellen</button>` : ''}
       </div>
     </div>
+    ${c.paused ? `<div class="banner info" style="justify-content:space-between;flex-wrap:wrap"><div><b>Meldungen pausiert</b>${esc(pauseText(c.paused))}${c.pausedStatus !== 'ok' ? ` · eigentlicher Zustand: ${c.pausedStatus === 'critical' ? 'kritisch' : 'Warnung'}` : ''}</div><button class="btn small" type="button" data-unpause="${esc(c.paused.key)}" data-name="${esc(c.name)}">Pause beenden</button></div>` : ''}
     ${c.problems.map((p, i) => `<div class="banner ${p.status === 'critical' ? 'crit' : 'warn'}" style="justify-content:space-between;flex-wrap:wrap"><div><b>${p.kind === 'outage' ? 'Möglicher Strom- oder Internetausfall' : esc(p.text)}</b>${p.kind === 'outage' ? esc(p.text.replace(/^[^:]+:\s*/, '')) + '. Kunden anrufen und Stromversorgung bzw. Internetanschluss prüfen lassen.' : ''}</div>${ticketBtn(null, p, i)}</div>`).join('')}
     ${!d.party ? `<div class="banner info"><div><b>Kein weclapp-Kunde zugeordnet</b>Unter <a href="#/zuordnung">Kundenzuordnung</a> verknüpfen (oder in Atera das Feld „weclapp-Kundennummer“ befüllen), dann erscheinen Tickets, Verträge und Angebote hier und es lassen sich Tickets anlegen.</div></div>` : ''}
     <section class="kpis">
@@ -360,7 +367,8 @@ async function renderCustomer(id) {
     <div class="card">
       <div class="card-head"><h2>Server &amp; Firewalls</h2><span class="muted small">${plural(c.servers, 'Server', 'Server')} · ${plural(c.firewalls, 'Firewall', 'Firewalls')} · Probleme zuerst</span></div>
       ${!c.deviceCount ? '<p class="empty">Keine Server oder Firewalls in Atera.</p>' : ''}
-      ${bad.length ? `<div class="devices">${bad.map((x, i) => device(x, i === 0)).join('')}</div>` : c.deviceCount ? '<div class="banner ok" style="margin:0"><div><b>Server und Firewalls in Ordnung</b></div></div>' : ''}
+      ${bad.length ? `<div class="devices">${bad.map((x, i) => device(x, i === 0)).join('')}</div>` : c.deviceCount ? `<div class="banner ok" style="margin:0"><div><b>${pausedDevs.length ? 'Keine aktiven Probleme' : 'Server und Firewalls in Ordnung'}</b>${pausedDevs.length ? 'Pausierte Meldungen siehe unten.' : ''}</div></div>` : ''}
+      ${pausedDevs.length ? `<h3 class="muted" style="margin:16px 0 8px;font-size:14px">Pausiert (${pausedDevs.length})</h3><div class="devices">${pausedDevs.map((x) => device(x, false)).join('')}</div>` : ''}
       ${good.length ? `<details style="margin-top:10px"><summary class="btn ghost small" style="display:inline-flex">Unauffällige anzeigen (${good.length})</summary><div class="devices" style="margin-top:8px">${good.map((x) => device(x, false)).join('')}</div></details>` : ''}
       ${staleDevs.length ? `<details style="margin-top:10px"><summary class="btn ghost small" style="display:inline-flex">Veraltete Server (${staleDevs.length}) – lange offline, in Atera aufräumen</summary><div class="devices" style="margin-top:8px">${staleDevs.map((x) => device(x, false)).join('')}</div></details>` : ''}
     </div>
@@ -376,6 +384,10 @@ async function renderCustomer(id) {
     openTicketDialog(d, dev, prob);
   }));
   $('[data-ticket-general]')?.addEventListener('click', () => openTicketDialog(d, null, null));
+  const again = () => renderCustomer(c.id);
+  $('[data-pause-customer]')?.addEventListener('click', () => openPauseDialog({ type: 'customer', id: c.id, customerId: c.id, name: c.name }, again));
+  $$('[data-pause]').forEach((b) => (b.onclick = () => { const x = c.devices.find((v) => v.guid === b.dataset.pause); openPauseDialog({ type: 'device', id: x.guid, customerId: c.id, name: x.name }, again); }));
+  $$('[data-unpause]').forEach((b) => (b.onclick = () => endPause(b.dataset.unpause, b.dataset.name, again)));
   $('#to-offer')?.addEventListener('click', () => {
     prefillCustomer(d.party);
     location.hash = '#/angebot';
@@ -474,19 +486,62 @@ async function openTicketDialog(d, dev, prob) {
   };
 }
 
+// ---------- Meldungen pausieren (Kunde oder Gerät) ----------
+const pauseUntil = (p) => (p.untilOk ? 'bis behoben' : p.until ? `bis ${dateTime(p.until)}` : 'unbefristet');
+const pauseText = (p) => `Pausiert ${pauseUntil(p)} · ${p.by || ''}${p.reason ? ` · „${p.reason}“` : ''}`;
+function openPauseDialog({ type, id, customerId, name }, onDone) {
+  const back = document.createElement('div');
+  back.className = 'modal-back';
+  back.innerHTML = `<div class="modal" role="dialog" aria-modal="true" aria-labelledby="pz-title" style="max-width:480px">
+    <h2 id="pz-title" style="margin-bottom:4px">Meldungen pausieren</h2>
+    <p class="muted" style="margin:0 0 14px">${type === 'customer' ? 'Kunde' : 'Gerät'} <b>${esc(name)}</b>${type === 'customer' ? ' mit allen Geräten' : ''}. Probleme bleiben grau sichtbar, zählen aber nicht als kritisch oder Warnung und erscheinen nicht auf der Startseite.</p>
+    <form id="pz-form">
+      <div class="field"><label for="pz-dur">Dauer</label><select id="pz-dur">
+        <option value="ok">bis das Problem behoben ist (endet automatisch)</option>
+        <option value="4h">4 Stunden</option><option value="1d">1 Tag</option><option value="3d">3 Tage</option>
+        <option value="7d">1 Woche</option><option value="30d">1 Monat</option><option value="forever">unbefristet (bis ich die Pause beende)</option>
+      </select></div>
+      <div class="field"><label for="pz-reason">Grund</label><input id="pz-reason" maxlength="300" placeholder="z. B. Server wird getauscht, Kunde informiert, Wartungsfenster …"></div>
+      <p id="pz-error" class="error" role="alert" hidden></p>
+      <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap"><button class="btn ghost" type="button" data-close>Abbrechen</button><button class="btn primary" type="submit">Pausieren</button></div>
+    </form></div>`;
+  document.body.append(back);
+  const close = () => { back.remove(); document.removeEventListener('keydown', onKey); };
+  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  document.addEventListener('keydown', onKey);
+  back.addEventListener('click', (e) => { if (e.target === back) close(); });
+  back.querySelector('[data-close]').onclick = close;
+  back.querySelector('#pz-reason').focus();
+  back.querySelector('#pz-form').onsubmit = async (e) => {
+    e.preventDefault();
+    try {
+      await api('/atera/pauses', { method: 'PUT', body: { type, id, customerId, duration: back.querySelector('#pz-dur').value, reason: back.querySelector('#pz-reason').value } });
+      close(); toast(`${name} pausiert`); state.overview = null; onDone?.();
+    } catch (ex) { const el = back.querySelector('#pz-error'); el.textContent = ex.message; el.hidden = false; }
+  };
+}
+async function endPause(key, name, onDone) {
+  try { await api(`/atera/pauses/${encodeURIComponent(key)}`, { method: 'DELETE' }); toast(`Pause für ${name} beendet`); state.overview = null; onDone?.(); } catch (e) { toast(e.message, true); }
+}
+
 const KIND = { server: 'Server', firewall: 'Firewall', workstation: 'Arbeitsplatz', other: 'Gerät' };
 const seenText = (x) => (x.online === null ? `${esc(x.monitoring || '')}-Überwachung` : x.online ? 'online' : x.kind === 'firewall' ? 'nicht erreichbar' : `offline · ${ago(x.lastSeen)}`);
+const PKIND = { offline: 'Offline', backup: 'Backup', disk: 'Speicher', alert: 'Alert' };
 function device(x, open) {
-  const p = x.problems[0];
-  return `<details class="device" ${open ? 'open' : ''}>
+  const pp0 = x.paused ? x.pausedProblems : x.problems;
+  const p = pp0[0];
+  const ownPause = x.paused?.type === 'device';
+  return `<details class="device ${x.paused ? 'paused' : ''}" ${open ? 'open' : ''}>
     <summary>
-      <span>${x.stale ? chip('neutral', 'Veraltet') : chip(x.status)}</span>
+      <span>${x.stale ? chip('neutral', 'Veraltet') : x.paused ? chip('neutral', 'Pausiert') : chip(x.status)}</span>
       <span><span class="d-name">${esc(x.name)}</span><br><span class="d-kind">${KIND[x.kind] || 'Gerät'}${x.description ? ` · ${esc(x.description)}` : ''}</span></span>
-      <span class="d-problem">${x.stale ? `<span class="muted">${esc(x.staleText)}</span>` : p ? esc(p.text) + (x.problems.length > 1 ? ` <span class="muted">(+${x.problems.length - 1})</span>` : '') : '<span class="muted">Keine Auffälligkeiten</span>'}</span>
+      <span class="d-problem">${x.stale ? `<span class="muted">${esc(x.staleText)}</span>` : p ? `<span class="${x.paused ? 'muted' : ''}">${esc(p.text)}</span>` + (pp0.length > 1 ? ` <span class="muted">(+${pp0.length - 1})</span>` : '') : '<span class="muted">Keine Auffälligkeiten</span>'}</span>
       <span class="d-seen">${seenText(x)}</span>
     </summary>
     <div class="device-body">
-      ${x.problems.length ? `<ul class="problem-list">${x.problems.map((pp, i) => `<li>${chip(pp.status, { offline: 'Offline', backup: 'Backup', disk: 'Speicher', alert: 'Alert' }[pp.kind] || 'Alert')} <span>${esc(pp.text)}</span>${pp.since ? `<span class="muted small">seit ${dateTime(pp.since)}</span>` : ''}${ticketBtn(x, pp, i)}</li>`).join('')}</ul>` : ''}
+      ${x.paused ? `<div class="pause-note"><span>${esc(pauseText(x.paused))}${ownPause ? '' : ' (ganzer Kunde)'}</span>${ownPause ? `<button class="btn small" type="button" data-unpause="${esc(x.paused.key)}" data-name="${esc(x.name)}">Pause beenden</button>` : ''}</div>` : ''}
+      ${pp0.length ? `<ul class="problem-list ${x.paused ? 'muted' : ''}">${pp0.map((pp, i) => `<li>${chip(x.paused ? 'neutral' : pp.status, PKIND[pp.kind] || 'Alert')} <span>${esc(pp.text)}</span>${pp.since ? `<span class="muted small">seit ${dateTime(pp.since)}</span>` : ''}${x.paused ? '' : ticketBtn(x, pp, i)}</li>`).join('')}</ul>` : ''}
+      ${!x.paused && !x.stale ? `<div style="margin-bottom:8px"><button class="btn small ghost" type="button" data-pause="${esc(x.guid)}">Meldungen pausieren</button></div>` : ''}
       ${x.kind === 'firewall' ? `<dl class="facts">
         <div><dt>Überwachung</dt><dd>${esc(x.monitoring || '–')}</dd></div>
         <div><dt>Status</dt><dd>${x.online === null ? 'nur über Alerts (kein Online-Status)' : x.online ? 'erreichbar' : 'nicht erreichbar'}</dd></div>

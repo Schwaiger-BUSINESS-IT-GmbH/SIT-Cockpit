@@ -369,3 +369,8 @@ a.kpi-link .sub { color: var(--link); }
 .stk-cust li:last-child { border-bottom: 0; }
 .stk-cust .check { align-items: flex-start; margin: 0; }
 @media (max-width: 700px) { .sec-date { margin-left: 0; width: 100%; } }
+
+/* pausierte Meldungen */
+.device.paused summary { opacity: .75; }
+.pause-note { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; padding: 8px 10px; border-radius: 6px; background: var(--surface-2); font-size: 13px; }
+.problem-list.muted span { color: var(--muted); }

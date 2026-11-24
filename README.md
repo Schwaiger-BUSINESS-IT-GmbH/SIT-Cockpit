@@ -4,7 +4,7 @@ Steuerzentrale von Schwaiger Business IT – vier Bereiche in einer App, ein Log
 
 | Bereich | Was es tut | Quelle |
 |---|---|---|
-| **Kunden & Geräte** | Ampel-Übersicht über **Server und Firewalls** aller Kunden: Server offline, Firewall nicht erreichbar, fehlgeschlagene Backups, kritische Alerts, volle Laufwerke, möglicher Strom-/Internetausfall. Probleme zuerst, Details auf Klick. | Atera |
+| **Kunden & Geräte** | Ampel-Übersicht über **Server und Firewalls** aller Kunden: Server offline, Firewall nicht erreichbar, fehlgeschlagene Backups, kritische Alerts, volle Laufwerke, möglicher Strom-/Internetausfall. Probleme zuerst, Details auf Klick. Meldungen je Kunde oder Gerät pausierbar. | Atera |
 | **Vertrieb & Finanzen** | Offene Angebote (inkl. „nachfassen“), angenommene Angebote, Managed-Service-Umsatz/Monat, offene Aufträge, überfällige Rechnungen, Auftragseingang 6 Monate, eigene Zeit im Monat. | weclapp |
 | **Angebotsboard** | Kunden-Onboarding am Tablet (Gestaltung nach *SIT_Angebotsboard_V4*): Erstaufnahme mit IT-Umgebung, interne Einstufung, Zusatz-SLA + Managed-Service-Katalog mit Staffelpreisen und Leistungsbeschreibungen, Angebotsvorschau, Unterschrift mit dem Finger → (Neu-)Kunde, Angebot (angenommen), Auftrag und PDF in weclapp, danach Onboarding-Checkliste. Umschaltbare Kundenansicht ohne interne Daten. | weclapp |
 | **Security** | Sicherheitsmeldungen von Fortinet, Microsoft (Patchday je Produkt), Synology, Veeam, 3CX u. a. mit CVEs, CVSS, EPSS und „aktiv ausgenutzt“ (CISA KEV); betroffene Kunden aus den Atera-Geräten; Bearbeitungsstatus je Meldung; aus einer Meldung je betroffenem Kunden ein weclapp-Ticket anlegen. Produktliste in `config/security.json`. | CISA, Hersteller, NVD, FIRST, Atera |
@@ -55,6 +55,7 @@ In der Kundenansicht hat jedes Problem (Server/Firewall offline, Alert, Backup, 
 
 - Die **automatische Kunden-E-Mail** von weclapp ist standardmäßig aus (`disableEmailTemplates`), per Häkchen zuschaltbar.
 - **Doppelte Tickets:** Der Dialog zeigt offene Tickets des Kunden zum Gerät an. Angelegte Tickets werden am Problem als „Ticket T-…“ angezeigt (gespeichert in `DATA_DIR/atera-tickets.json`).
+- **Meldungen pausieren:** am Kunden („Kunde pausieren“) oder am Gerät („Meldungen pausieren“), mit Dauer (4 Std. bis 1 Monat, „bis behoben“ = endet automatisch, sobald alles wieder in Ordnung ist, oder unbefristet) und Grund. Pausierte Probleme bleiben grau sichtbar, zählen aber nicht als kritisch/Warnung und erscheinen nicht unter „Braucht Aufmerksamkeit“. Alle aktiven Pausen stehen unten in der Kundenübersicht (gespeichert in `DATA_DIR/atera-pauses.json`).
 - Voraussetzung: Der Atera-Kunde ist einem weclapp-Kunden zugeordnet.
 - Vorbelegung fest einstellen (optional): `TICKET_STATUS_ID`, `TICKET_CHANNEL_ID`, `TICKET_PRIORITY_CRITICAL_ID`, `TICKET_PRIORITY_WARNING_ID`.
 

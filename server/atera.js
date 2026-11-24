@@ -6,6 +6,7 @@
 // Bewusst NUR Server und Firewalls: Arbeitsplätze, Drucker, Switches usw.
 // und deren Alerts werden nicht angezeigt.
 import { config } from './config.js';
+import { active, applyPauses, removePause } from './pauses.js';
 
 export class AteraError extends Error {
   constructor(status, message) { super(message); this.status = status; }
@@ -334,7 +335,11 @@ export async function overview({ force = false } = {}) {
   const stale = Date.now() - cache.at > config.ateraRefreshSeconds * 1000;
   if (!cache.customers || force) await refresh();
   else if (stale) refresh(); // im Hintergrund, alter Stand wird sofort geliefert
-  return cache;
+  // pausierte Kunden/Geräte erst hier anwenden, damit Änderungen sofort wirken
+  const pauses = active();
+  const { customers, resolved } = applyPauses(cache.customers, pauses);
+  for (const k of resolved) removePause(k);
+  return { ...cache, customers, pauses: Object.values(pauses).filter((p) => !resolved.includes(p.key)) };
 }
 
 export function startBackgroundRefresh() {

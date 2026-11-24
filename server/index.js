@@ -12,6 +12,7 @@ import * as finance from './finance.js';
 import { maintenanceReport } from './maintenance.js';
 import * as security from './security.js';
 import * as secTickets from './security-tickets.js';
+import * as pauses from './pauses.js';
 import { roles, requireFinance } from './access.js';
 import { registerTimeRoutes } from './time-routes.js';
 import { getStored, saveStored, removeStored } from './tokens.js';
@@ -112,8 +113,23 @@ api.get('/me', (req, res) => {
 api.get('/atera/overview', h(async (req, res) => {
   const c = await atera.overview({ force: req.query.refresh === '1' });
   const customers = (c.customers || []).map(({ devices, ...rest }) => rest);
-  res.json({ updatedAt: c.at, error: c.error, customers });
+  res.json({ updatedAt: c.at, error: c.error, customers, pauses: c.pauses });
 }));
+
+// ---------- Meldungen pausieren (Kunde oder Gerät) ----------
+api.put('/atera/pauses', h(async (req, res) => {
+  const b = req.body || {};
+  const c = await atera.overview();
+  const cust = (c.customers || []).find((x) => String(x.id) === String(b.customerId));
+  if (!cust) return res.status(404).json({ error: 'Kunde in Atera nicht gefunden' });
+  const dev = b.type === 'device' ? cust.devices.find((d) => d.guid === b.id) : null;
+  if (b.type === 'device' && !dev) return res.status(404).json({ error: 'Gerät nicht gefunden' });
+  res.json(pauses.setPause({
+    type: b.type, id: b.type === 'device' ? dev.guid : cust.id, customerId: cust.id,
+    name: dev ? dev.name : cust.name, customerName: cust.name, duration: b.duration, reason: b.reason,
+  }, req.session.name || req.session.userId));
+}));
+api.delete('/atera/pauses/:key', h(async (req, res) => res.json({ removed: pauses.removePause(req.params.key) })));
 
 // ---------- Security (Herstellermeldungen, CVEs) – für alle angemeldeten Mitarbeiter ----------
 api.get('/security', h(async (req, res) => res.json(await security.securityReport({ days: req.query.days, force: req.query.refresh === '1' }))));
