@@ -99,7 +99,7 @@ function route() {
   content.classList.toggle('flush', page === 'zeiten');
   content.classList.remove('board-host');
   if (page !== 'angebot') leaveBoard();
-  const pages = { start: renderStart, kunden: id ? () => renderCustomer(id) : renderCustomers, zuordnung: renderCustomerMap, vertrieb: renderDashboard, dashboard: renderDashboard, finanzen: id === 'vertraege' ? renderContracts : renderFinance, angebot: renderOffer, zeiten: renderTime };
+  const pages = { start: renderStart, kunden: id ? () => renderCustomer(id) : renderCustomers, zuordnung: renderCustomerMap, vertrieb: renderDashboard, dashboard: renderDashboard, finanzen: id === 'vertraege' ? renderContracts : renderFinance, security: renderSecurity, angebot: renderOffer, zeiten: renderTime };
   (pages[page] || renderStart)();
   window.scrollTo(0, 0);
 }
@@ -127,6 +127,7 @@ const ICON = {
   vertrieb: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>',
   angebot: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M8 17c1.5-2 3-2 4 0s2.5 1 4-1"/></svg>',
   zeiten: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M9 2h6"/></svg>',
+  security: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z"/><path d="M12 8v5M12 16h.01"/></svg>',
 };
 
 async function renderStart() {
@@ -137,20 +138,20 @@ async function renderStart() {
   content.innerHTML = `
     <div class="page-head"><div><div class="eyebrow">${new Date().toLocaleDateString('de-AT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</div><h1>${hello}${name ? `, ${esc(name)}` : ''}</h1></div>
       <div class="page-actions"><a class="btn primary" href="#/angebot">Neues Angebot</a><a class="btn ghost" href="#/zeiten">Zeiterfassung</a></div></div>
-    <section class="home-areas" id="home-areas">${['kunden', 'vertrieb', 'angebot', 'zeiten'].map((k) => `<div class="area-card loading-card" data-area="${k}"><div class="area-head">${ICON[k]}<span>Lade …</span></div></div>`).join('')}</section>
+    <section class="home-areas" id="home-areas">${['kunden', 'security', 'vertrieb', 'angebot', 'zeiten'].map((k) => `<div class="area-card loading-card" data-area="${k}"><div class="area-head">${ICON[k]}<span>Lade …</span></div></div>`).join('')}</section>
     <div class="grid-2" style="margin-top:18px">
       <section class="card"><div class="card-head"><h2>Braucht Aufmerksamkeit</h2><span class="muted small" id="att-count"></span></div><div id="attention"><p class="loading" style="padding:8px 0">Sammle offene Punkte …</p></div></section>
       <section class="card"><div class="card-head"><h2>Schnellzugriff</h2></div><div class="quick" id="quick"></div></section>
     </div>`;
   // Alles parallel laden; jeder Bereich zeichnet sich, sobald seine Daten da sind
   const fin = state.me?.roles?.finance;
-  const [ov, dash, hist, drafts, timers, cmap, finR] = await Promise.allSettled([
+  const [ov, dash, hist, drafts, timers, cmap, finR, secR] = await Promise.allSettled([
     api('/atera/overview'), api('/dashboard'), api('/offer/history'), api('/offer/drafts'), api('/timers'), api('/customer-map'),
-    fin ? api('/finance') : Promise.resolve(null),
+    fin ? api('/finance') : Promise.resolve(null), api('/security/summary'),
   ]);
   if (stale(seq)) return;
   const val = (r) => (r.status === 'fulfilled' ? r.value : null);
-  const o = val(ov), d = val(dash), hi = val(hist)?.offers || [], dr = val(drafts)?.drafts || [], ti = val(timers), cm = val(cmap), f = val(finR);
+  const o = val(ov), d = val(dash), hi = val(hist)?.offers || [], dr = val(drafts)?.drafts || [], ti = val(timers), cm = val(cmap), f = val(finR), sec = val(secR);
 
   // --- Bereichskarten
   const card = (k, href, title, big, bigLabel, lines, cls = '') => `<a class="area-card ${cls}" href="${href}" data-area="${k}">
@@ -165,6 +166,10 @@ async function renderStart() {
       [`${warn.length} mit Warnung · ${cust.length - crit.length - warn.length} ohne Befund`, srvDown || fwDown ? `${plural(srvDown, 'Server', 'Server')} offline · ${plural(fwDown, 'Firewall', 'Firewalls')} nicht erreichbar` : 'Alle Server und Firewalls erreichbar', `Stand ${ago(o.updatedAt)}`],
       crit.length ? 'crit' : warn.length ? 'warn' : 'ok')
       : card('kunden', '#/kunden', 'Kunden &amp; Geräte', '–', 'Atera nicht erreichbar', [esc(ov.reason?.message || '')]),
+    sec ? card('security', '#/security', 'Security', sec.exploited, sec.exploited === 1 ? 'aktiv ausgenutzte Lücke offen' : 'aktiv ausgenutzte Lücken offen',
+      [`${plural(sec.critical, 'kritische Meldung', 'kritische Meldungen')} offen (30 Tage)`, ...sec.top.slice(0, 2).map((t) => `${esc(t.vendor)}: ${esc(t.title)}`)],
+      sec.exploited ? 'crit' : sec.critical ? 'warn' : 'ok')
+      : card('security', '#/security', 'Security', '–', 'Meldungen werden geladen', ['Hersteller-Feeds werden im Hintergrund abgerufen']),
     d ? card('vertrieb', '#/vertrieb', 'Vertrieb', d.quotations?.error ? '–' : eur0(d.quotations.net), d.quotations?.error ? 'Angebote: keine Berechtigung' : `in ${plural(d.quotations.count, 'offenem Angebot', 'offenen Angeboten')}`,
       [!d.quotations?.error && d.quotations.followUpCount ? `${d.quotations.followUpCount} zum Nachfassen` : null, d.accepted?.error ? null : `${eur0(d.accepted.net)} diesen Monat angenommen`, d.contracts?.error ? null : `${eur0(d.contracts.monthly)} Managed Services / Monat`])
       : card('vertrieb', '#/vertrieb', 'Vertrieb', '–', 'weclapp nicht erreichbar', []),
@@ -182,10 +187,13 @@ async function renderStart() {
     })(),
   ];
   $('#home-areas').innerHTML = areas.join('');
+  const nbs = $('#nav-security');
+  if (nbs && sec) { nbs.hidden = !sec.exploited; nbs.textContent = sec.exploited; }
 
   // --- Braucht Aufmerksamkeit
   const items = [];
   for (const c of crit.slice(0, 6)) items.push({ sev: 'critical', tag: 'Kunde', text: `${c.name}: ${c.headline || 'kritisch'}`, href: `#/kunden/${encodeURIComponent(c.id)}` });
+  for (const t of (sec?.top || []).filter((x) => x.exploited)) items.push({ sev: 'critical', tag: 'Security', text: `${t.vendor}: ${t.title} – aktiv ausgenutzt${t.customers ? `, ${plural(t.customers, 'Kunde', 'Kunden')} betroffen` : ''}`, href: '#/security' });
   for (const x of hi.filter((x) => !x.weclapp?.quotationNumber).slice(0, 3)) items.push({ sev: 'neutral', tag: 'Auftrag', text: `${x.customer.company || x.customer.name}: unterschrieben, aber noch nicht in weclapp`, href: '#/vertrieb' });
   if (f && !f.receivables?.error) for (const i of f.receivables.list.slice(0, 3)) items.push({ sev: 'neutral', tag: 'Rechnung', text: `${i.number} ${i.customer}: ${eur(i.amount)} seit ${i.days} Tagen fällig`, href: '#/finanzen' });
   if (d && !d.quotations?.error) for (const q of d.quotations.list.filter((q) => q.ageDays >= d.followUpDays).slice(0, 3)) items.push({ sev: 'neutral', tag: 'Angebot', text: `${q.number} ${q.customer}: ${eur(q.net)}, ${q.ageDays} Tage offen`, href: '#/vertrieb' });
@@ -200,6 +208,7 @@ async function renderStart() {
   const quick = [
     ['#/angebot', 'Neues Angebot', 'Am Tablet beim Kunden kalkulieren und unterschreiben'],
     ['#/kunden', 'Kundenübersicht', 'Server und Firewalls aller Kunden'],
+    ['#/security', 'Security', 'Sicherheitsmeldungen von Fortinet, Microsoft, Synology & Co.'],
     ['#/zeiten', 'Zeit erfassen', 'Timer auf ein weclapp-Ticket starten'],
     ['#/vertrieb', 'Vertrieb', 'Angebote, Pipeline, Auftragseingang'],
     ...(fin ? [['#/finanzen', 'Finanzen', 'Liquidität, Forderungen, Umsatz – nur Geschäftsführung/Buchhaltung']] : []),
@@ -820,6 +829,158 @@ async function renderContracts() {
   };
   form.onchange = save;
   form.onsubmit = (e) => { e.preventDefault(); save(); };
+}
+
+// =====================================================================
+// Security – Herstellermeldungen (Fortinet, Microsoft, Synology …) mit CVEs
+// =====================================================================
+const SEC_KEY = 'sit-cockpit-security';
+const SEC_STATUS = { new: 'Neu', progress: 'In Arbeit', done: 'Erledigt', irrelevant: 'Nicht relevant' };
+const SEC_SEV = { critical: 'Kritisch', high: 'Hoch', medium: 'Mittel', low: 'Niedrig' };
+const SEC_SRC = { fortinet: 'Fortinet PSIRT', msrc: 'Microsoft', synology: 'Synology', nvd: 'NVD', kev: 'CISA KEV' };
+function secPrefs() {
+  const d = { days: 90, vendor: '', product: '', status: 'open', inUse: true, hot: false, q: '' };
+  try { return { ...d, ...JSON.parse(localStorage.getItem(SEC_KEY) || '{}'), q: '' }; } catch { return d; }
+}
+const saveSecPrefs = (p) => { try { localStorage.setItem(SEC_KEY, JSON.stringify({ ...p, q: '' })); } catch { /* egal */ } };
+const pctTxt = (x) => (x == null ? '–' : `${x < 0.001 ? '<0,1' : nf(Math.round(x * 1000) / 10)} %`);
+
+async function renderSecurity({ refresh = false } = {}) {
+  const seq = navSeq;
+  const prefs = secPrefs();
+  content.innerHTML = `<p class="loading">${refresh ? 'Rufe Hersteller-Feeds neu ab (bis zu einer Minute) …' : 'Lade Sicherheitsmeldungen …'}</p>`;
+  let d;
+  try { d = await api(`/security?days=${prefs.days}${refresh ? '&refresh=1' : ''}`); } catch (e) {
+    if (stale(seq)) return;
+    content.innerHTML = `<div class="banner crit"><div><b>Security-Meldungen nicht verfügbar</b>${esc(e.message)}</div></div>`;
+    return;
+  }
+  if (stale(seq)) return;
+  const isOpen = (i) => ['new', 'progress'].includes(i.status.status);
+  const vendors = [...new Set(d.items.map((i) => i.vendor))].sort();
+  const failed = d.sources.filter((s) => s.error);
+  const openUse = d.items.filter((i) => i.inUse && isOpen(i));
+  const exploited = openUse.filter((i) => i.exploited);
+  const affectedCustomers = new Set(openUse.filter((i) => i.exploited || i.severity === 'critical').flatMap((i) => i.customers.map((c) => c.id)));
+  const nb = $('#nav-security');
+  if (nb) { nb.hidden = !exploited.length; nb.textContent = exploited.length; }
+
+  content.innerHTML = `
+    <div class="page-head">
+      <div><div class="eyebrow">Herstellermeldungen · CISA KEV · NVD · EPSS</div><h1>Security</h1></div>
+      <div class="page-actions"><span class="stamp">Feeds: ${d.fetchedAt ? dateTime(d.fetchedAt) : 'noch nicht abgerufen'}${d.loading ? ' · lädt …' : ''}</span><button class="btn" id="sec-refresh" type="button">Neu abrufen</button></div>
+    </div>
+    ${failed.length ? `<div class="banner warn"><div><b>Nicht alle Quellen erreichbar</b>${failed.map((s) => `${esc(s.label)}: ${esc(s.error)}`).join(' · ')} – angezeigt wird der letzte Stand.</div></div>` : ''}
+    ${d.ateraError ? `<div class="banner info"><div><b>Kundenabgleich eingeschränkt</b>Atera: ${esc(d.ateraError)} – betroffene Kunden können fehlen.</div></div>` : ''}
+    <section class="kpis">
+      <div class="kpi ${exploited.length ? 'crit' : ''}"><div class="label">Aktiv ausgenutzt, offen</div><div class="value">${exploited.length}</div><div class="sub">laut CISA KEV bzw. Hersteller · bei uns im Einsatz</div></div>
+      <div class="kpi"><div class="label">Kritisch, offen</div><div class="value">${openUse.filter((i) => i.severity === 'critical').length}</div><div class="sub">CVSS ≥ 9 bzw. Hersteller „kritisch“</div></div>
+      <div class="kpi"><div class="label">Betroffene Kunden</div><div class="value">${affectedCustomers.size}</div><div class="sub">bei kritischen / ausgenutzten Meldungen</div></div>
+      <div class="kpi"><div class="label">Neu in 7 Tagen</div><div class="value">${d.items.filter((i) => i.inUse && (i.published || 0) > Date.now() - 7 * 864e5).length}</div><div class="sub">im Einsatz</div></div>
+      <div class="kpi"><div class="label">Erledigt</div><div class="value">${d.items.filter((i) => i.status.status === 'done').length}</div><div class="sub">im gewählten Zeitraum</div></div>
+    </section>
+    <div class="card">
+      <div class="card-head"><h2>Unsere Produkte</h2><span class="muted small">Geräte aus Atera · Liste in config/security.json · anklicken zum Filtern</span></div>
+      <div class="table-wrap"><table class="sec-products"><thead><tr><th>Produkt</th><th>Hersteller</th><th class="num">Kunden</th><th class="num">Geräte</th><th class="num">offen</th><th class="num">ausgenutzt</th></tr></thead><tbody>
+        ${d.products.filter((p) => p.inUse).sort((a, b) => b.exploited - a.exploited || b.open - a.open).map((p) => `<tr data-product="${esc(p.id)}" class="${prefs.product === p.id ? 'sel' : ''}">
+          <td><b>${esc(p.label)}</b>${p.fromAtera ? '' : ' <span class="muted small">laut Liste</span>'}</td><td>${esc(p.vendor)}</td>
+          <td class="num" title="${esc(p.customerList.map((c) => c.name).join(', '))}">${p.fromAtera ? p.customers : '–'}</td><td class="num">${p.fromAtera ? p.devices : '–'}</td>
+          <td class="num">${p.open}</td><td class="num">${p.exploited ? chip('critical', String(p.exploited)) : '0'}</td></tr>`).join('')}
+      </tbody></table></div>
+      ${d.products.some((p) => !p.inUse) ? `<p class="muted small" style="margin:8px 0 0">Nicht im Einsatz erkannt: ${d.products.filter((p) => !p.inUse).map((p) => esc(p.label)).join(', ')} – erscheinen bei „auch nicht eingesetzte Produkte“.</p>` : ''}
+    </div>
+    <form class="toolbar sec-filter" id="sec-form" style="margin-top:18px" onsubmit="return false">
+      <input class="search" type="search" name="q" placeholder="Suche: CVE, Produkt, Titel, Kunde …" aria-label="Meldungen durchsuchen">
+      <div class="seg" role="group" aria-label="Zeitraum">${[30, 90, 365].map((x) => `<button type="button" data-days="${x}" aria-pressed="${x === d.days}">${x} Tage</button>`).join('')}</div>
+      <select name="vendor" aria-label="Hersteller"><option value="">Alle Hersteller</option>${vendors.map((v) => `<option${v === prefs.vendor ? ' selected' : ''}>${esc(v)}</option>`).join('')}</select>
+      <select name="status" aria-label="Status"><option value="open"${prefs.status === 'open' ? ' selected' : ''}>Offen (neu + in Arbeit)</option><option value=""${prefs.status === '' ? ' selected' : ''}>Alle Status</option>${Object.entries(SEC_STATUS).map(([k, l]) => `<option value="${k}"${prefs.status === k ? ' selected' : ''}>${l}</option>`).join('')}</select>
+      <label class="check"><input type="checkbox" name="hot"${prefs.hot ? ' checked' : ''}> nur ausgenutzt / kritisch</label>
+      <label class="check"><input type="checkbox" name="all"${prefs.inUse ? '' : ' checked'}> auch nicht eingesetzte Produkte</label>
+      ${prefs.product ? `<button class="btn small" type="button" id="sec-clear-product">Produktfilter: ${esc(d.products.find((p) => p.id === prefs.product)?.label || prefs.product)} ✕</button>` : ''}
+    </form>
+    <div id="sec-list"></div>
+    <p class="muted small" style="margin-top:14px">Quellen: ${d.sources.map((s) => `${esc(s.label)} ${s.error ? '(Fehler)' : s.count != null ? `(${nf(s.count)})` : ''}`).join(' · ')}. Atera kennt die Firmware-Versionen nicht – „betroffen“ heißt: Kunde setzt das Produkt ein, Version prüfen. EPSS = Wahrscheinlichkeit einer Ausnutzung in den nächsten 30 Tagen.</p>`;
+
+  let shown = 50;
+  const filtered = () => {
+    const q = prefs.q.trim().toLowerCase();
+    return d.items.filter((i) => (!prefs.inUse || i.inUse)
+      && (!prefs.vendor || i.vendor === prefs.vendor)
+      && (!prefs.product || i.productId === prefs.product)
+      && (prefs.status === '' || (prefs.status === 'open' ? isOpen(i) : i.status.status === prefs.status))
+      && (!prefs.hot || i.exploited || i.severity === 'critical')
+      && (!q || `${i.title} ${i.summary} ${i.cves.join(' ')} ${i.productLabel} ${i.vendor} ${i.id} ${i.customers.map((c) => c.name).join(' ')}`.toLowerCase().includes(q)));
+  };
+  const itemHtml = (i) => {
+    const cves = i.cves.slice(0, 4).map((c) => `<a href="https://nvd.nist.gov/vuln/detail/${encodeURIComponent(c)}" target="_blank" rel="noopener">${esc(c)}</a>`).join(', ') + (i.cves.length > 4 ? ` <span class="muted">+${i.cves.length - 4}</span>` : '');
+    const sevChip = i.severity ? chip(i.severity === 'critical' ? 'warning' : 'neutral', `${SEC_SEV[i.severity]}${i.cvss != null ? ` ${nf(i.cvss)}` : ''}`) : (i.cvss != null ? chip('neutral', `CVSS ${nf(i.cvss)}`) : '');
+    const st = i.status;
+    return `<article class="sec-item ${i.exploited ? 'exploited' : i.severity === 'critical' ? 'critical' : ''} ${isOpen(i) ? '' : 'closed'}" data-key="${esc(i.key)}">
+      <div class="sec-top">
+        ${i.exploited ? chip('critical', 'Aktiv ausgenutzt') : ''}${i.kev?.ransomware ? chip('critical', 'Ransomware') : ''}${sevChip}
+        <span class="sec-prod">${esc(i.vendor)} · ${esc(i.productLabel)}</span>
+        <span class="muted small sec-date">${date(i.published)}${i.updated && i.updated - (i.published || 0) > 864e5 ? ` · aktualisiert ${date(i.updated)}` : ''} · ${esc(SEC_SRC[i.source] || i.source)}</span>
+      </div>
+      <h3 class="sec-title"><a href="${esc(i.url)}" target="_blank" rel="noopener">${esc(i.title)}</a></h3>
+      ${i.summary && !i.summary.startsWith(i.title.replace(/[.…]+$/, '')) ? `<p class="sec-sum">${esc(i.summary)}</p>` : ''}
+      <div class="sec-meta">
+        ${i.cves.length ? `<span>${cves}</span>` : ''}
+        ${i.epss != null ? `<span title="Wahrscheinlichkeit einer Ausnutzung in 30 Tagen (FIRST EPSS)">EPSS ${pctTxt(i.epss)}</span>` : ''}
+        ${i.kev?.due ? `<span>CISA-Frist ${date(i.kev.due)}</span>` : ''}
+        <span>${i.customers.length ? `<b>${plural(i.customers.length, 'Kunde', 'Kunden')} betroffen</b>` : i.inUse ? 'im Einsatz (nicht in Atera erfasst)' : '<span class="muted">bei uns nicht erkannt</span>'}</span>
+      </div>
+      <details class="sec-details"><summary>Details${i.customers.length ? ', betroffene Kunden' : ''}${i.fix?.length ? ', Lösung' : ''}</summary>
+        ${i.customers.length ? `<div class="sec-block"><b>Betroffene Kunden</b><ul class="sec-cust">${i.customers.map((c) => `<li><a href="#/kunden/${encodeURIComponent(c.id)}">${esc(c.name)}</a> <span class="muted small">${plural(c.devices, 'Gerät', 'Geräte')}</span></li>`).join('')}</ul></div>` : ''}
+        ${i.affected?.length ? `<div class="sec-block"><b>Betroffene Versionen</b><ul>${i.affected.map((a) => `<li>${esc(a.replace('|', ' bis '))}</li>`).join('')}</ul></div>` : ''}
+        ${i.fix?.length ? `<div class="sec-block"><b>Lösung</b><ul>${i.fix.map((a) => `<li>${esc(a)}</li>`).join('')}</ul></div>` : ''}
+        ${i.products?.length && i.source !== 'kev' ? `<div class="sec-block"><b>Produkte</b> <span class="muted">${esc(i.products.slice(0, 12).join(', '))}</span></div>` : ''}
+        ${i.details?.length ? `<div class="sec-block"><b>Lücken</b><div class="table-wrap"><table><tbody>${i.details.map((x) => `<tr><td><a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.cve)}</a></td><td class="wrap">${esc(x.title)}</td><td>${x.exploited ? chip('critical', 'ausgenutzt') : x.disclosed ? chip('neutral', 'öffentlich') : ''}</td><td class="num">${x.cvss != null ? nf(x.cvss) : ''}</td></tr>`).join('')}</tbody></table></div></div>` : ''}
+        ${i.kev?.action ? `<div class="sec-block"><b>CISA-Empfehlung</b> <span class="muted">${esc(i.kev.action)}</span></div>` : ''}
+      </details>
+      <div class="sec-status">
+        <select data-status aria-label="Bearbeitungsstatus">${Object.entries(SEC_STATUS).map(([k, l]) => `<option value="${k}"${st.status === k ? ' selected' : ''}>${l}</option>`).join('')}</select>
+        <input data-note type="text" maxlength="500" placeholder="Notiz: was wurde gemacht, welche Kunden sind offen …" value="${esc(st.note || '')}" aria-label="Notiz">
+        <span class="muted small">${st.by ? `${esc(st.by)}, ${dateTime(st.at)}` : ''}</span>
+      </div>
+    </article>`;
+  };
+  const draw = () => {
+    const rows = filtered();
+    $('#sec-list').innerHTML = rows.length
+      ? `<p class="muted small" style="margin:0 0 8px">${plural(rows.length, 'Meldung', 'Meldungen')} · wichtigste zuerst (aktiv ausgenutzt, Schweregrad, EPSS)</p>${rows.slice(0, shown).map(itemHtml).join('')}${rows.length > shown ? `<button class="btn" id="sec-more" type="button" style="margin-top:10px">Weitere ${Math.min(50, rows.length - shown)} anzeigen</button>` : ''}`
+      : `<div class="banner ok"><div><b>Nichts offen</b>Für diese Auswahl gibt es keine Meldungen${prefs.status === 'open' ? ', die noch bearbeitet werden müssen' : ''}.</div></div>`;
+    const more = $('#sec-more');
+    if (more) more.onclick = () => { shown += 50; draw(); };
+    $$('#sec-list .sec-item').forEach((el) => {
+      const key = el.dataset.key;
+      const item = d.items.find((x) => x.key === key);
+      const save = async () => {
+        const status = el.querySelector('[data-status]').value, note = el.querySelector('[data-note]').value;
+        if (status === item.status.status && note === (item.status.note || '')) return;
+        try {
+          item.status = await api('/security/status', { method: 'PUT', body: { key, status, note } });
+          toast(`Status: ${SEC_STATUS[status]}`);
+          el.querySelector('.sec-status .muted').textContent = `${item.status.by}, ${dateTime(item.status.at)}`;
+          el.classList.toggle('closed', !isOpen(item));
+        } catch (e) { toast(e.message, true); }
+      };
+      el.querySelector('[data-status]').onchange = save;
+      el.querySelector('[data-note]').onchange = save;
+    });
+  };
+  draw();
+
+  const form = $('#sec-form');
+  form.q.oninput = () => { prefs.q = form.q.value; shown = 50; draw(); };
+  form.vendor.onchange = () => { prefs.vendor = form.vendor.value; saveSecPrefs(prefs); shown = 50; draw(); };
+  form.status.onchange = () => { prefs.status = form.status.value; saveSecPrefs(prefs); shown = 50; draw(); };
+  form.hot.onchange = () => { prefs.hot = form.hot.checked; saveSecPrefs(prefs); shown = 50; draw(); };
+  form.all.onchange = () => { prefs.inUse = !form.all.checked; saveSecPrefs(prefs); shown = 50; draw(); };
+  $$('#sec-form [data-days]').forEach((b) => (b.onclick = () => { prefs.days = Number(b.dataset.days); saveSecPrefs(prefs); renderSecurity(); }));
+  $$('.sec-products tr[data-product]').forEach((tr) => (tr.onclick = () => { prefs.product = prefs.product === tr.dataset.product ? '' : tr.dataset.product; saveSecPrefs(prefs); renderSecurity(); }));
+  const clr = $('#sec-clear-product');
+  if (clr) clr.onclick = () => { prefs.product = ''; saveSecPrefs(prefs); renderSecurity(); };
+  $('#sec-refresh').onclick = () => renderSecurity({ refresh: true });
 }
 
 // =====================================================================

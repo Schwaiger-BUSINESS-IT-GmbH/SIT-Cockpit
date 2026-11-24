@@ -7,6 +7,7 @@ Steuerzentrale von Schwaiger Business IT – vier Bereiche in einer App, ein Log
 | **Kunden & Geräte** | Ampel-Übersicht über **Server und Firewalls** aller Kunden: Server offline, Firewall nicht erreichbar, fehlgeschlagene Backups, kritische Alerts, volle Laufwerke, möglicher Strom-/Internetausfall. Probleme zuerst, Details auf Klick. | Atera |
 | **Vertrieb & Finanzen** | Offene Angebote (inkl. „nachfassen“), angenommene Angebote, Managed-Service-Umsatz/Monat, offene Aufträge, überfällige Rechnungen, Auftragseingang 6 Monate, eigene Zeit im Monat. | weclapp |
 | **Angebotsboard** | Kunden-Onboarding am Tablet (Gestaltung nach *SIT_Angebotsboard_V4*): Erstaufnahme mit IT-Umgebung, interne Einstufung, Zusatz-SLA + Managed-Service-Katalog mit Staffelpreisen und Leistungsbeschreibungen, Angebotsvorschau, Unterschrift mit dem Finger → (Neu-)Kunde, Angebot (angenommen), Auftrag und PDF in weclapp, danach Onboarding-Checkliste. Umschaltbare Kundenansicht ohne interne Daten. | weclapp |
+| **Security** | Sicherheitsmeldungen von Fortinet, Microsoft (Patchday je Produkt), Synology, Veeam, 3CX u. a. mit CVEs, CVSS, EPSS und „aktiv ausgenutzt“ (CISA KEV); betroffene Kunden aus den Atera-Geräten; Bearbeitungsstatus je Meldung. Produktliste in `config/security.json`. | CISA, Hersteller, NVD, FIRST, Atera |
 | **Zeiten** | SIT-Time v0.8.0 (Ticket-Zeiterfassung, Ticket anlegen/schließen, Arbeitszeit) – eingebettet, gleicher Login. | weclapp |
 
 ## Schnellstart (Demo mit Beispieldaten)
@@ -136,3 +137,10 @@ docs/ design/      Konzept, Anforderungen, Design-Entwurf
 1. Im SIT-Time-Repo (`../SIT-Time`) die gewünschte Version auschecken.
 2. `npm run sync:zeiten` übernimmt die Oberfläche nach `public/zeiten/` und setzt die Cockpit-Pfade (`/zeiten/`) automatisch.
 3. Server-Änderungen (`server/index.js`, `server/weclapp.js` in SIT-Time) von Hand in `server/time-routes.js` bzw. `server/weclapp.js` nachziehen – `git diff <alt>..<neu> -- server` im SIT-Time-Repo zeigt sie.
+
+### Security-Seite
+
+- Quellen sind öffentlich und brauchen keine Schlüssel: CISA KEV, Fortinet PSIRT (RSS + CSAF), Microsoft Security Update Guide, Synology Advisories, NVD, FIRST EPSS. Optional `NVD_API_KEY` für ein höheres NVD-Limit.
+- Abruf alle 3 Stunden im Hintergrund (`SEC_REFRESH_HOURS`), „Neu abrufen“ auf der Seite holt sofort.
+- Welche Produkte wir einsetzen, steht in `config/security.json` (Hersteller, Muster für Meldungen und Atera-Geräte, `inUse` für Produkte ohne Atera-Erfassung wie Veeam oder 3CX). Weitere Produkte über `nvd` (Stichwortsuche) ergänzen.
+- Bearbeitungsstatus liegt in `DATA_DIR/security-status.json`, die gesammelten Fortinet-Meldungen in `security-fortinet.json` (beides in der nächtlichen Sicherung).

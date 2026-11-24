@@ -264,8 +264,40 @@ export function buildOverview({ customers, agents, alerts, net = {} }, now = Dat
   return list;
 }
 
+/**
+ * Geräteliste für die Security-Seite: alle Agents (Server + Clients, ohne lange offline)
+ * und alle Netzwerkgeräte, mit Hersteller/Produkt-Text zum Abgleich mit Sicherheitsmeldungen.
+ */
+export function buildInventory({ customers, agents, net }, now = Date.now()) {
+  const names = new Map(customers.map((c) => [c.CustomerID, c.CustomerName]));
+  const out = [];
+  for (const ag of agents) {
+    const lastSeen = ts(ag.LastSeen) ?? ts(ag.LastSeenDate);
+    if (ag.Online === false && lastSeen && now - lastSeen >= config.staleServerDays * 864e5) continue;
+    const kind = deviceKind(ag);
+    if (kind === 'other') continue;
+    out.push({
+      customerId: ag.CustomerID, customer: names.get(ag.CustomerID) || ag.CustomerName || '',
+      kind, name: ag.MachineName || ag.AgentName || ag.SystemName || '',
+      text: [ag.OS, ag.OSType, ag.OSVersion, ag.Vendor, ag.VendorBrandModel, ag.MachineName].filter(Boolean).join(' '),
+      os: ag.OS || '',
+    });
+  }
+  for (const key of Object.keys(net || {})) {
+    for (const d of net[key] || []) {
+      out.push({
+        customerId: d.CustomerID, customer: names.get(d.CustomerID) || d.CustomerName || '',
+        kind: isFirewall(d) ? 'firewall' : 'network', name: d.Name || d.Hostname || '',
+        text: [d.Name, d.Hostname, d.Model, d.Type, d.Vendor, d.Description].filter(Boolean).join(' '),
+        os: '',
+      });
+    }
+  }
+  return out;
+}
+
 // ---------- Zwischenspeicher mit Hintergrund-Aktualisierung ----------
-let cache = { at: 0, customers: null, error: null, loading: null };
+let cache = { at: 0, customers: null, inventory: [], error: null, loading: null };
 
 async function load() {
   const soft = (p, extra) => all(p, extra).catch((e) => { console.error(`Atera ${p}:`, e.message); return []; });
@@ -278,7 +310,8 @@ async function load() {
     soft('/devices/tcpdevices'),
     soft('/devices/httpdevices'),
   ]);
-  return buildOverview({ customers, agents, alerts, net: { snmp, generic, tcp, http } });
+  const net = { snmp, generic, tcp, http };
+  return { customers: buildOverview({ customers, agents, alerts, net }), inventory: buildInventory({ customers, agents, net }) };
 }
 
 export async function refresh() {
@@ -288,7 +321,7 @@ export async function refresh() {
   }
   if (cache.loading) return cache.loading;
   cache.loading = load()
-    .then((customers) => { cache = { at: Date.now(), customers, error: null, loading: null }; return cache; })
+    .then(({ customers, inventory }) => { cache = { at: Date.now(), customers, inventory, error: null, loading: null }; return cache; })
     .catch((e) => {
       console.error('Atera-Aktualisierung fehlgeschlagen:', e.message);
       cache = { ...cache, error: e.message, loading: null, failedAt: Date.now() };

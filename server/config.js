@@ -46,6 +46,17 @@ export const config = {
   // ---------- Finanzen (nur Entra-Gruppe) ----------
   financeGroupId: process.env.FINANCE_GROUP_ID || '',
   financeLocal: process.env.FINANCE_LOCAL === '1', // nur lokale Entwicklung ohne Microsoft-Login
+  // ---------- Security (öffentliche Quellen, keine Schlüssel nötig) ----------
+  security: {
+    kevUrl: demo ? `${self}/__mock/security/kev.json` : process.env.SEC_KEV_URL || 'https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json',
+    fortinetUrl: demo ? `${self}/__mock/security/fortinet.xml` : process.env.SEC_FORTINET_URL || 'https://filestore.fortinet.com/fortiguard/rss/ir.xml',
+    msrcUrl: demo ? `${self}/__mock/security/msrc` : process.env.SEC_MSRC_URL || 'https://api.msrc.microsoft.com/sug/v2.0/en-US/vulnerability',
+    synologyUrl: demo ? `${self}/__mock/security/synology.html` : process.env.SEC_SYNOLOGY_URL || 'https://www.synology.com/en-global/security/advisory',
+    nvdUrl: demo ? `${self}/__mock/security/nvd` : process.env.SEC_NVD_URL || 'https://services.nvd.nist.gov/rest/json/cves/2.0',
+    nvdApiKey: process.env.NVD_API_KEY || '', // optional, höheres Abfragelimit
+    epssUrl: demo ? `${self}/__mock/security/epss` : process.env.SEC_EPSS_URL || 'https://api.first.org/data/v1/epss',
+    refreshHours: num(process.env.SEC_REFRESH_HOURS, 3),
+  },
   // Interner Kostensatz je Technikerstunde (Lohn + Nebenkosten) für die Vertragsrentabilität
   internalHourlyCost: num(process.env.INTERNAL_HOURLY_COST, 60),
   // Artikel/Kategorien mit diesem Muster im Namen gelten als Wartungsleistung (tragen Stunden)

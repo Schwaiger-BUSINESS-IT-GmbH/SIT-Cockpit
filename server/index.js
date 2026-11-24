@@ -10,6 +10,7 @@ import * as tickets from './tickets.js';
 import * as custmap from './customermap.js';
 import * as finance from './finance.js';
 import { maintenanceReport } from './maintenance.js';
+import * as security from './security.js';
 import { roles, requireFinance } from './access.js';
 import { registerTimeRoutes } from './time-routes.js';
 import { getStored, saveStored, removeStored } from './tokens.js';
@@ -31,6 +32,8 @@ if (config.demo) {
   const { ateraMock } = await import('./mock/atera.js');
   app.use('/__mock/weclapp', weclappMock());
   app.use('/__mock/atera/api/v3', ateraMock());
+  const { securityMock } = await import('./mock/security.js');
+  app.use('/__mock/security', securityMock());
 }
 
 app.use(requireEntraIfConfigured);
@@ -109,6 +112,15 @@ api.get('/atera/overview', h(async (req, res) => {
   const c = await atera.overview({ force: req.query.refresh === '1' });
   const customers = (c.customers || []).map(({ devices, ...rest }) => rest);
   res.json({ updatedAt: c.at, error: c.error, customers });
+}));
+
+// ---------- Security (Herstellermeldungen, CVEs) – für alle angemeldeten Mitarbeiter ----------
+api.get('/security', h(async (req, res) => res.json(await security.securityReport({ days: req.query.days, force: req.query.refresh === '1' }))));
+api.get('/security/summary', h(async (req, res) => res.json(await security.securitySummary())));
+api.put('/security/status', h(async (req, res) => {
+  const { key, status, note } = req.body || {};
+  if (!key || typeof key !== 'string' || key.length > 120) return res.status(400).json({ error: 'Meldung fehlt' });
+  res.json(security.setStatus(key, { status, note }, req.session.name || req.session.userId));
 }));
 
 api.get('/atera/customers/:id', h(async (req, res) => {
@@ -193,4 +205,5 @@ app.listen(config.port, () => {
   console.log(`  weclapp: ${config.weclappBaseUrl}`);
   console.log(`  Atera:   ${config.ateraBaseUrl}`);
   atera.startBackgroundRefresh();
+  security.startBackgroundRefresh();
 });

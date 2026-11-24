@@ -1,0 +1,75 @@
+{
+  "_hinweis": "Produkte, die wir bei Kunden einsetzen. Muster sind reguläre Ausdrücke (Groß/Klein egal). inventory = Abgleich mit Atera-Geräten (kind: server|workstation|firewall|network, match: Gerätename/Modell/OS, os: Betriebssystem). inUse: true = immer relevant, auch ohne Atera-Treffer. Quellen: fortinet (PSIRT), msrc (Microsoft; \"*\" = alles Übrige von Microsoft), synology (Advisories), nvd (Stichwortsuche NVD), kev (CISA: aktiv ausgenutzt).",
+  "products": [
+    {
+      "id": "fortigate", "vendor": "Fortinet", "label": "FortiGate / FortiOS",
+      "fortinet": "FortiOS|FortiGate|FortiProxy",
+      "kev": { "vendor": "Fortinet", "product": "FortiOS|FortiGate|FortiProxy|SSL ?VPN" },
+      "inventory": { "kind": "firewall", "match": "forti|\\bfg-?\\d|fg\\d{2,3}[a-z]?\\b" }
+    },
+    {
+      "id": "forticlient", "vendor": "Fortinet", "label": "FortiClient / EMS",
+      "fortinet": "FortiClient",
+      "kev": { "vendor": "Fortinet", "product": "FortiClient" },
+      "inUse": true
+    },
+    {
+      "id": "fortinet-mgmt", "vendor": "Fortinet", "label": "FortiSwitch / FortiAP / FortiManager / FortiAnalyzer",
+      "fortinet": "FortiSwitch|FortiAP|FortiManager|FortiAnalyzer|FortiAuthenticator|FortiToken|FortiWLM",
+      "kev": { "vendor": "Fortinet", "product": "FortiSwitch|FortiAP|FortiManager|FortiAnalyzer|FortiWLM" }
+    },
+    {
+      "id": "windows", "vendor": "Microsoft", "label": "Windows (Server & Clients)",
+      "msrc": "*",
+      "kev": { "vendor": "Microsoft", "product": "Windows|Win32k|Active Directory|Remote Desktop|SMB|MSHTML|Internet Explorer|DirectX|Kernel|Print Spooler" },
+      "inventory": { "os": "Windows" }
+    },
+    {
+      "id": "exchange", "vendor": "Microsoft", "label": "Exchange Server",
+      "msrc": "Exchange",
+      "kev": { "vendor": "Microsoft", "product": "Exchange" },
+      "inUse": true
+    },
+    {
+      "id": "office", "vendor": "Microsoft", "label": "Microsoft 365 Apps / Office",
+      "msrc": "^(Microsoft )?(Office|Excel|Word|Outlook|PowerPoint|Visio|Access|OneNote|Publisher|365 Apps)",
+      "kev": { "vendor": "Microsoft", "product": "Office|Word|Excel|Outlook|PowerPoint" },
+      "inUse": true
+    },
+    {
+      "id": "sql", "vendor": "Microsoft", "label": "SQL Server",
+      "msrc": "SQL Server",
+      "kev": { "vendor": "Microsoft", "product": "SQL Server" },
+      "inUse": true
+    },
+    {
+      "id": "sharepoint", "vendor": "Microsoft", "label": "SharePoint Server",
+      "msrc": "SharePoint",
+      "kev": { "vendor": "Microsoft", "product": "SharePoint" }
+    },
+    {
+      "id": "synology", "vendor": "Synology", "label": "Synology NAS / Router (DSM, SRM)",
+      "synology": ".*",
+      "kev": { "vendor": "Synology", "product": ".*" },
+      "inventory": { "match": "synology|diskstation|rackstation|\\bds\\d{3,4}|\\brs\\d{3,4}|\\bnas\\b" }
+    },
+    {
+      "id": "veeam", "vendor": "Veeam", "label": "Veeam Backup & Replication",
+      "nvd": "Veeam",
+      "kev": { "vendor": "Veeam", "product": ".*" },
+      "inUse": true
+    },
+    {
+      "id": "3cx", "vendor": "3CX", "label": "3CX Telefonanlage",
+      "nvd": "3CX",
+      "kev": { "vendor": "3CX", "product": ".*" },
+      "inUse": true
+    },
+    {
+      "id": "esxi", "vendor": "VMware", "label": "VMware ESXi / vCenter",
+      "nvd": "VMware ESXi",
+      "kev": { "vendor": "VMware", "product": "ESXi|vCenter" }
+    }
+  ],
+  "msrcExclude": "Azure|Copilot|Dynamics|Power (BI|Apps|Automate|Pages)|Entra|Intune|Defender for Cloud|Fabric|Bing|Xbox|Edge|Teams|Purview|Sentinel|AI Foundry|Machine Learning|GitHub|Visual Studio|\\.NET|Mariner|Linux|Android|iOS|Mac"
+}

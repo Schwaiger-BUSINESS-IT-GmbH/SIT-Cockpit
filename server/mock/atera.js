@@ -21,7 +21,8 @@ const customers = [
 
 let id = 1000;
 const disk = (totalGb, freeGb, Drive = 'C:') => ({ Drive, Total: totalGb * 1024, Free: freeGb * 1024 });
-function agent(CustomerID, MachineName, type, { online = true, seen = 2 * MIN, disks = [disk(256, 120)], user = '', desc = '' } = {}) {
+function agent(CustomerID, MachineName, type, opts = {}) {
+  const { online = true, seen = 2 * MIN, disks = [disk(256, 120)], user = '', desc = '' } = opts;
   const c = customers.find((x) => x.CustomerID === CustomerID);
   const server = type === 'server' || type === 'dc';
   id++;
@@ -37,7 +38,7 @@ function agent(CustomerID, MachineName, type, { online = true, seen = 2 * MIN, d
     LastSeen: iso(seen),
     LastRebootTime: iso(3 * D + id * MIN),
     OSType: type === 'dc' ? 'Domain Controller' : server ? 'Server' : 'Work Station',
-    OS: server ? 'Windows Server 2022 Standard' : type === 'mac' ? 'macOS 15 Sequoia' : 'Windows 11 Pro',
+    OS: server ? (opts.os || 'Windows Server 2022 Standard') : type === 'mac' ? 'macOS 15 Sequoia' : 'Windows 11 Pro',
     Processor: server ? 'Intel Xeon E-2336' : 'Intel Core i5-1335U',
     Memory: server ? 65536 : 16384,
     CurrentLoggedUsers: user,
@@ -87,7 +88,7 @@ const agents = [
   agent(8, 'GEM-AMTSLEITUNG', 'ws'),
   agent(8, 'GEM-BUERGERSERVICE', 'ws'),
   // 9 Kanzlei Pichler – CPU-Alert
-  agent(9, 'PICHLER-SRV', 'server'),
+  agent(9, 'PICHLER-SRV', 'server', { os: 'Windows Server 2019 Standard' }),
   agent(9, 'PICHLER-PC01', 'ws'),
   // 10 Elektro Hofer – nur Laptops
   agent(10, 'HOFER-NB01', 'ws'),
@@ -129,6 +130,9 @@ const snmpDevices = [
   snmp(6, 'Core-Switch Keller', 'Switch'),
   snmp(7, 'FW-WAGNER-FG60F', 'Firewall'),
   snmp(9, 'Drucker Kanzlei', 'Printer'),
+  // NAS für die Security-Seite (Synology)
+  snmp(1, 'NAS-HUBER-DS923', 'Storage'),
+  snmp(6, 'Synology RS1221 Backup', 'Storage'),
 ];
 const genericDevices = [
   { DeviceID: ++netId, DeviceGuid: `net-${netId}`, CustomerID: 8, CustomerName: 'Gemeindeamt Neukirchen', Name: 'Firewall Gemeinde (Ping)', Monitored: true },
