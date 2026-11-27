@@ -7,6 +7,7 @@ Steuerzentrale von Schwaiger Business IT – vier Bereiche in einer App, ein Log
 | **Kunden & Geräte** | Ampel-Übersicht über **Server und Firewalls** aller Kunden: Server offline, Firewall nicht erreichbar, fehlgeschlagene Backups, kritische Alerts, volle Laufwerke, möglicher Strom-/Internetausfall. Probleme zuerst, Details auf Klick. Meldungen je Kunde oder Gerät pausierbar. | Atera |
 | **Vertrieb & Finanzen** | Offene Angebote (inkl. „nachfassen“), angenommene Angebote, Managed-Service-Umsatz/Monat, offene Aufträge, überfällige Rechnungen, Auftragseingang 6 Monate, eigene Zeit im Monat. | weclapp |
 | **Angebotsboard** | Kunden-Onboarding am Tablet (Gestaltung nach *SIT_Angebotsboard_V4*): Erstaufnahme mit IT-Umgebung, interne Einstufung, Zusatz-SLA + Managed-Service-Katalog mit Staffelpreisen und Leistungsbeschreibungen, Angebotsvorschau, Unterschrift mit dem Finger → (Neu-)Kunde, Angebot (angenommen), Auftrag und PDF in weclapp, danach Onboarding-Checkliste. Umschaltbare Kundenansicht ohne interne Daten. | weclapp |
+| **Backups** | Wochentabelle je Kunde (Mo–So, je Sicherungsnacht ✓ / ✗ / !) aus den Atera-Ereignisprotokoll-Meldungen (z. B. Veeam, Ereignis-ID 190), Woche vor/zurück (8 Wochen). Zeile aufklappen: Ereignisse mit Gerät, Ereignis-ID, Job und ausklappbarer Beschreibung. Letzte Nacht fehlgeschlagene Sicherungen auf der Startseite. | Atera |
 | **Security** | Sicherheitsmeldungen von Fortinet, Microsoft (Patchday je Produkt), Synology, Veeam, 3CX u. a. mit CVEs, CVSS, EPSS und „aktiv ausgenutzt“ (CISA KEV); betroffene Kunden aus den Atera-Geräten; Bearbeitungsstatus je Meldung; aus einer Meldung je betroffenem Kunden ein weclapp-Ticket anlegen. Produktliste in `config/security.json`. | CISA, Hersteller, NVD, FIRST, Atera |
 | **Zeiten** | SIT-Time (Ticket-Zeiterfassung, Arbeitszeit) – die eigene App `time.schwaiger-it.at` eingebettet, immer aktuell, dieselben Timer wie am Handy. | SIT-Time |
 
@@ -139,6 +140,12 @@ SIT-Time ist eine eigene App (`https://time.schwaiger-it.at`, Repo `SIT-Time`) u
 - SIT-Time erlaubt das Einbetten nur für `EMBED_ORIGINS` (dort Standard `https://cockpit.schwaiger-it.at`) und gibt dem Cockpit lesend die eigenen Timer für die Startseiten-Kachel frei. Beides funktioniert, weil `cockpit.` und `time.schwaiger-it.at` dieselbe Site sind (Cookies werden im iframe mitgeschickt).
 - Die Microsoft-Anmeldung lässt sich nicht einbetten. Ist sie bei SIT-Time abgelaufen, zeigt das Cockpit „SIT-Time meldet sich nicht“ mit **Bei SIT-Time anmelden** (kleines Popup); läuft sie während der Arbeit ab, bietet SIT-Time selbst das Popup an.
 - Lokal testen: SIT-Time mit `PORT=3100 EMBED_ORIGINS=http://localhost:3000 npm run demo`, Cockpit mit `npm run demo`.
+
+### Backups
+
+- Quelle: Atera-Alerts der Ereignisprotokoll-Überwachung (Titel „Ereignisprotokoll: Veeam Backup | Ereignis-ID: 190“, Beschreibung im Meldungstext) sowie andere Alerts mit Backup/Sicherung/Veeam im Titel. Atera liefert die Historie (neueste zuerst); das Cockpit sammelt die Backup-Ereignisse in `DATA_DIR/backup-events.json` (8 Wochen) und holt alle 15 Min. Neues (`BACKUP_REFRESH_MINUTES`).
+- Spalte = Sicherungsnacht: Ereignisse vor 12 Uhr zählen zur Nacht davor (`BACKUP_DAY_CUTOFF_HOUR`). Je Job zählt das letzte Ergebnis der Nacht (ein erfolgreicher Retry hebt den Fehler auf).
+- **Wichtig:** Die Atera-Überwachung meldet derzeit nur Fehlschläge. Ein grüner Haken heißt deshalb „kein Fehler gemeldet“. Wird in Atera für Ereignis-ID 190 zusätzlich die Stufe „Information“ überwacht, kommen auch Erfolge an: dann gibt es echte Haken, und fehlt bei so einem Kunden eine Meldung, zeigt die Tabelle „?“.
 
 ### Security-Seite
 

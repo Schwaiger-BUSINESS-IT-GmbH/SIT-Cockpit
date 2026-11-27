@@ -35,6 +35,9 @@ export const config = {
   serverOfflineMinutes: num(process.env.SERVER_OFFLINE_MINUTES, 15),
   // Server länger als X Tage offline = veraltet (vermutlich abgebaut), zählt nicht zur Ampel
   staleServerDays: num(process.env.STALE_SERVER_DAYS, 30),
+  // Backup-Übersicht: Ereignisse vor dieser Uhrzeit zählen zur Nacht davor; Abruf-Intervall
+  backupDayCutoffHour: num(process.env.BACKUP_DAY_CUTOFF_HOUR, 12),
+  backupRefreshMinutes: num(process.env.BACKUP_REFRESH_MINUTES, 15),
   // ---------- Angebotsboard ----------
   // Nach der Unterschrift automatisch einen Auftrag erzeugen
   offerCreateSalesOrder: process.env.OFFER_CREATE_SALES_ORDER !== '0',

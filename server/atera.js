@@ -34,6 +34,9 @@ async function request(path, query = {}) {
   return res.json();
 }
 
+/** eine Seite der Alerts (alle Status, neueste zuerst) – für die Backup-Historie */
+export const alertsPage = (page) => request('/alerts', { page, itemsInPage: 50 });
+
 // Alle Seiten eines Listen-Endpunkts laden (Atera: items/page/totalPages, max. 50 je Seite)
 async function all(path, extra = {}) {
   const out = [];
@@ -46,7 +49,7 @@ async function all(path, extra = {}) {
 }
 
 // Atera liefert Zeitstempel teils ohne Zeitzone – die sind UTC
-function ts(v) {
+export function ts(v) {
   if (!v) return null;
   const s = String(v);
   const t = Date.parse(/[zZ]|[+-]\d\d:?\d\d$/.test(s) ? s : s + 'Z');
@@ -69,7 +72,7 @@ export function isFirewall(dev) {
   return dev.Type === 'Firewall' || FW_NAME.test(`${dev.Name || ''} ${dev.Hostname || ''}`);
 }
 
-const isBackupAlert = (a) => /backup|sicherung|veeam|acronis|datto|synology hyper/i.test(
+export const isBackupAlert = (a) => /backup|sicherung|veeam|acronis|datto|synology hyper/i.test(
   `${a.AlertCategoryID || ''} ${a.Title || ''} ${a.Source || ''}`);
 
 function fmtSince(ms) {

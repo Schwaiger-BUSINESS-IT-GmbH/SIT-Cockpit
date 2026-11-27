@@ -112,6 +112,46 @@ const alerts = [
   { AlertID: 5999, Severity: 'Critical', Title: 'Gerät antwortet nicht auf Ping', Created: iso(35 * MIN), DeviceGuid: 'net-7012', DeviceName: 'Firewall Hofer (Ping)', CustomerID: 10, CustomerName: 'Elektro Hofer e.U.', AlertCategoryID: 'Availability', Archived: false, Source: 'Atera' },
 ];
 
+// Backup-Historie wie im echten Atera: Ereignisprotokoll-Überwachung "Veeam Backup | Ereignis-ID 190".
+// Nacht n = vor n Tagen um ca. 23:xx Wiener Zeit; ältere Meldungen sind erledigt (Archived).
+const midnight = Date.UTC(new Date(now).getUTCFullYear(), new Date(now).getUTCMonth(), new Date(now).getUTCDate());
+let evId = 30000;
+const veeam = (name, night, result, job, { minutes = 35, retry = false, details = '' } = {}) => {
+  const a = dev(name);
+  const at = midnight - night * D + 22 * H + minutes * MIN;
+  if (at > now) return null;
+  const Result = { failed: 'Failed', warning: 'Warning', success: 'Success' }[result];
+  return {
+    AlertID: ++evId, Code: evId, Source: 'AlphaAgentSelfMonitoring', AlertCategoryID: 'General',
+    Severity: result === 'success' ? 'Information' : 'Warning',
+    Title: 'Ereignisprotokoll: Veeam Backup | Ereignis-ID: 190',
+    AlertMessage: `${retry ? 'Retry of ' : ''}Backup job '${job}' finished with ${Result}.
+Job details: ${details || (result === 'success' ? 'Processed 412 GB, transferred 18,6 GB, duration 0:47:12.' : '')}
+[Maschinenname: ${name}]`,
+    Created: iso(now - at), DeviceGuid: a.DeviceGuid, DeviceName: a.MachineName, CustomerID: a.CustomerID, CustomerName: a.CustomerName,
+    Archived: night > 1, DeviceType: 'Server',
+  };
+};
+const RPC = "Error: Failed to call RPC function 'FcCreateDir': Das System kann den angegebenen Pfad nicht finden. CreateDirectory(F:) function call failed. Cannot create folder. Folder path: [F:\Backup Job NAS].";
+const TIMEOUT = 'Could not allocate processing resources within allotted timeout (82800 sec)';
+const nights = (n) => Array.from({ length: n }, (_, i) => i);
+alerts.push(...[
+  // Ordination Wimmer: jede Nacht fehlgeschlagen, auch der Retry
+  ...nights(12).flatMap((n) => [veeam('ORD-WIMMER-SRV', n, 'failed', 'Backup Job NAS', { details: TIMEOUT }), veeam('ORD-WIMMER-SRV', n, 'failed', 'Backup Job NAS', { minutes: 95, retry: true, details: TIMEOUT })]),
+  // Huber: NAS-Ziel zwei Nächte nicht erreichbar
+  veeam('HUBER-SRV01', 3, 'failed', 'Backup Job NAS', { details: RPC }), veeam('HUBER-SRV01', 4, 'failed', 'Backup Job NAS', { details: RPC }),
+  // Lang & Partner: Überwachung meldet auch Erfolge; eine Warnung, einmal Retry erfolgreich
+  ...nights(15).filter((n) => n > 0).flatMap((n) => (n === 5 ? [veeam('LANG-SRV-DC01', n, 'warning', 'Server täglich', { details: 'Changed block tracking is disabled for disk 1. Falling back to full scan.' })]
+    : n === 2 ? [veeam('LANG-SRV-DC01', n, 'failed', 'Server täglich', { details: 'Error: The network path was not found. Failed to connect to backup repository.' }), veeam('LANG-SRV-DC01', n, 'success', 'Server täglich', { minutes: 80, retry: true })]
+      : [veeam('LANG-SRV-DC01', n, 'success', 'Server täglich')])),
+  // Seeblick: meldet Erfolge, eine Nacht fehlt die Meldung ganz
+  ...nights(15).filter((n) => n > 0 && n !== 6).map((n) => veeam('SEEBLICK-SRV01', n, 'success', 'Hotel Backup')),
+  // Gruber: Vorwoche einmal fehlgeschlagen
+  veeam('GRUBER-SRV', 9, 'failed', 'Backup GRUBER', { details: 'Error: Access is denied. Failed to create VSS snapshot.' }),
+].filter(Boolean));
+// wie Atera: neueste zuerst
+alerts.sort((x, y) => Date.parse(`${y.Created}Z`) - Date.parse(`${x.Created}Z`));
+
 // Netzwerkgeräte wie im echten Atera: Firewalls per SNMP (mit Online-Status)
 // oder per Ping/TCP (nur Alerts); Drucker/Switches werden vom Cockpit ignoriert.
 let netId = 7000;
@@ -150,7 +190,7 @@ export function ateraMock() {
   r.use((req, res, next) => (req.get('X-API-KEY') === 'demo-atera-key' || req.get('Authorization') === 'Bearer demo-atera-key' ? next() : res.status(401).json({ Message: 'Unauthorized' })));
   r.get('/customers', (req, res) => res.json(page(customers, req.query)));
   r.get('/agents', (req, res) => res.json(page(agents, req.query)));
-  r.get('/alerts', (req, res) => res.json(page(alerts, req.query)));
+  r.get('/alerts', (req, res) => res.json(page(req.query.alertStatus === 'Open' ? alerts.filter((a) => !a.Archived) : alerts, req.query)));
   r.get('/devices/snmpdevices', (req, res) => res.json(page(snmpDevices, req.query)));
   r.get('/devices/genericdevices', (req, res) => res.json(page(genericDevices, req.query)));
   r.get('/devices/tcpdevices', (req, res) => res.json(page([], req.query)));

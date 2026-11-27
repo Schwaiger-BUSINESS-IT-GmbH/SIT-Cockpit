@@ -13,6 +13,7 @@ import { maintenanceReport } from './maintenance.js';
 import * as security from './security.js';
 import * as secTickets from './security-tickets.js';
 import * as pauses from './pauses.js';
+import * as backups from './backups.js';
 import { roles, requireFinance } from './access.js';
 import { getStored, saveStored, removeStored } from './tokens.js';
 import { setSession, clearSession, requireSession, entraPrincipal, requireEntraIfConfigured } from './session.js';
@@ -110,6 +111,9 @@ api.get('/atera/overview', h(async (req, res) => {
   const customers = (c.customers || []).map(({ devices, ...rest }) => rest);
   res.json({ updatedAt: c.at, error: c.error, customers, pauses: c.pauses });
 }));
+
+// ---------- Backup-Übersicht (Wochentabelle je Kunde) ----------
+api.get('/backups', h(async (req, res) => res.json(await backups.backupReport({ week: req.query.week, force: req.query.refresh === '1' }))));
 
 // ---------- Meldungen pausieren (Kunde oder Gerät) ----------
 api.put('/atera/pauses', h(async (req, res) => {
@@ -216,4 +220,5 @@ app.listen(config.port, () => {
   console.log(`  Atera:   ${config.ateraBaseUrl}`);
   atera.startBackgroundRefresh();
   security.startBackgroundRefresh();
+  backups.startBackgroundRefresh();
 });

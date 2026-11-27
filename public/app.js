@@ -99,7 +99,7 @@ function route() {
   content.classList.toggle('flush', page === 'zeiten');
   content.classList.remove('board-host');
   if (page !== 'angebot') leaveBoard();
-  const pages = { start: renderStart, kunden: id ? () => renderCustomer(id) : renderCustomers, zuordnung: renderCustomerMap, vertrieb: renderDashboard, dashboard: renderDashboard, finanzen: id === 'vertraege' ? renderContracts : renderFinance, security: renderSecurity, angebot: renderOffer, zeiten: renderTime };
+  const pages = { start: renderStart, kunden: id ? () => renderCustomer(id) : renderCustomers, zuordnung: renderCustomerMap, vertrieb: renderDashboard, dashboard: renderDashboard, finanzen: id === 'vertraege' ? renderContracts : renderFinance, security: renderSecurity, backups: renderBackups, angebot: renderOffer, zeiten: renderTime };
   (pages[page] || renderStart)();
   window.scrollTo(0, 0);
 }
@@ -145,13 +145,13 @@ async function renderStart() {
     </div>`;
   // Alles parallel laden; jeder Bereich zeichnet sich, sobald seine Daten da sind
   const fin = state.me?.roles?.finance;
-  const [ov, dash, hist, drafts, timers, cmap, finR, secR] = await Promise.allSettled([
+  const [ov, dash, hist, drafts, timers, cmap, finR, secR, bkR] = await Promise.allSettled([
     api('/atera/overview'), api('/dashboard'), api('/offer/history'), api('/offer/drafts'), timeFetch('/timers'), api('/customer-map'),
-    fin ? api('/finance') : Promise.resolve(null), api('/security/summary'),
+    fin ? api('/finance') : Promise.resolve(null), api('/security/summary'), api('/backups'),
   ]);
   if (stale(seq)) return;
   const val = (r) => (r.status === 'fulfilled' ? r.value : null);
-  const o = val(ov), d = val(dash), hi = val(hist)?.offers || [], dr = val(drafts)?.drafts || [], ti = val(timers), cm = val(cmap), f = val(finR), sec = val(secR);
+  const o = val(ov), d = val(dash), hi = val(hist)?.offers || [], dr = val(drafts)?.drafts || [], ti = val(timers), cm = val(cmap), f = val(finR), sec = val(secR), bk = val(bkR);
 
   // --- Bereichskarten
   const card = (k, href, title, big, bigLabel, lines, cls = '') => `<a class="area-card ${cls}" href="${href}" data-area="${k}">
@@ -194,6 +194,10 @@ async function renderStart() {
   const items = [];
   for (const c of crit.slice(0, 6)) items.push({ sev: 'critical', tag: 'Kunde', text: `${c.name}: ${c.headline || 'kritisch'}`, href: `#/kunden/${encodeURIComponent(c.id)}` });
   for (const t of (sec?.top || []).filter((x) => x.exploited)) items.push({ sev: 'critical', tag: 'Security', text: `${t.vendor}: ${t.title} – aktiv ausgenutzt${t.customers ? `, ${plural(t.customers, 'Kunde', 'Kunden')} betroffen` : ''}`, href: '#/security' });
+  const bkFailed = bk && bk.totals.lastNightFailed ? bk.customers.filter((c) => c.cells.find((x) => x.day === bk.totals.lastNight)?.status === 'failed') : [];
+  for (const c of bkFailed.slice(0, 4)) items.push({ sev: 'critical', tag: 'Backup', text: `${c.name}: Sicherung letzte Nacht fehlgeschlagen`, href: '#/backups' });
+  const nbb = $('#nav-backups');
+  if (nbb && bk) { nbb.hidden = !bkFailed.length; nbb.textContent = bkFailed.length || ''; }
   for (const x of hi.filter((x) => !x.weclapp?.quotationNumber).slice(0, 3)) items.push({ sev: 'neutral', tag: 'Auftrag', text: `${x.customer.company || x.customer.name}: unterschrieben, aber noch nicht in weclapp`, href: '#/vertrieb' });
   if (f && !f.receivables?.error) for (const i of f.receivables.list.slice(0, 3)) items.push({ sev: 'neutral', tag: 'Rechnung', text: `${i.number} ${i.customer}: ${eur(i.amount)} seit ${i.days} Tagen fällig`, href: '#/finanzen' });
   if (d && !d.quotations?.error) for (const q of d.quotations.list.filter((q) => q.ageDays >= d.followUpDays).slice(0, 3)) items.push({ sev: 'neutral', tag: 'Angebot', text: `${q.number} ${q.customer}: ${eur(q.net)}, ${q.ageDays} Tage offen`, href: '#/vertrieb' });
@@ -884,6 +888,108 @@ async function renderContracts() {
   };
   form.onchange = save;
   form.onsubmit = (e) => { e.preventDefault(); save(); };
+}
+
+// =====================================================================
+// Backups – Wochenansicht je Kunde (Sicherungsereignisse aus Atera, z. B. Veeam Ereignis-ID 190)
+// =====================================================================
+const BK = {
+  failed: ['✗', 'Fehlgeschlagen'], warning: ['!', 'Warnung'], success: ['✓', 'Erfolg gemeldet'],
+  quiet: ['✓', 'Kein Fehler gemeldet'], missing: ['?', 'Keine Meldung, obwohl sonst Erfolge gemeldet werden'], future: ['', 'Nacht noch nicht vorbei'],
+};
+const BK_RES = { failed: ['critical', 'Fehlgeschlagen'], warning: ['warning', 'Warnung'], success: ['ok', 'Erfolgreich'], info: ['neutral', 'Info'] };
+const WD = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
+const bkState = { week: 0, onlyProblems: false, q: '', open: new Set() };
+const bkDay = (k) => new Date(`${k}T12:00:00Z`).toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit' });
+const bkNext = (k) => new Date(Date.parse(`${k}T12:00:00Z`) + 864e5).toISOString().slice(0, 10);
+const isoWeek = (k) => {
+  const d = new Date(`${k}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + 3 - ((d.getUTCDay() + 6) % 7));
+  const y = new Date(Date.UTC(d.getUTCFullYear(), 0, 4));
+  return 1 + Math.round(((d - y) / 864e5 - 3 + ((y.getUTCDay() + 6) % 7)) / 7);
+};
+const bkTime = (ms) => new Date(ms).toLocaleString('de-AT', { weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+
+async function renderBackups({ refresh = false } = {}) {
+  const seq = navSeq;
+  content.innerHTML = `<p class="loading">${refresh ? 'Hole Backup-Ereignisse neu aus Atera …' : 'Lade Backup-Ereignisse aus Atera …'}</p>`;
+  let d;
+  try { d = await api(`/backups?week=${bkState.week}${refresh ? '&refresh=1' : ''}`); } catch (e) {
+    if (stale(seq)) return;
+    content.innerHTML = `<div class="banner crit"><div><b>Backup-Übersicht nicht verfügbar</b>${esc(e.message)}</div></div>`;
+    return;
+  }
+  if (stale(seq)) return;
+  const t = d.totals;
+  if (bkState.week === 0) { const nb = $('#nav-backups'); if (nb) { nb.hidden = !t.lastNightFailed; nb.textContent = t.lastNightFailed || ''; } }
+  const first = d.days[0].key, lastDay = d.days[6].key;
+  content.innerHTML = `
+    <div class="page-head">
+      <div><div class="eyebrow">Atera · Ereignisprotokoll (z. B. Veeam, Ereignis-ID 190)</div><h1>Backups</h1></div>
+      <div class="page-actions">
+        <span class="stamp">${d.syncedAt ? `Stand: ${ago(d.syncedAt)}` : 'noch nicht abgerufen'}${d.loading ? ' · lädt …' : ''}</span>
+        <button class="btn ghost" type="button" id="bk-refresh">Neu abrufen</button>
+      </div>
+    </div>
+    ${d.error ? `<div class="banner warn"><div><b>Atera-Abruf eingeschränkt</b>${esc(d.error)} – angezeigt wird der letzte Stand.</div></div>` : ''}
+    ${!d.successSeen ? '<div class="banner info"><div><b>Grüner Haken = kein Fehler gemeldet</b>Atera meldet derzeit nur fehlgeschlagene Sicherungen. Ein Haken heißt daher „kein Fehler gemeldet“, nicht sicher „gelaufen“. Für echte Erfolgsmeldungen in der Atera-Ereignisüberwachung (Veeam Backup, Ereignis-ID 190) zusätzlich die Stufe „Information“ überwachen – das Cockpit nutzt sie dann automatisch.</div></div>' : ''}
+    <section class="kpis">
+      <div class="kpi ${t.lastNightFailed ? 'crit' : ''}"><div class="label">Letzte Nacht fehlgeschlagen</div><div class="value">${t.lastNightFailed ?? '–'}</div><div class="sub">${t.lastNightFailed != null ? `Nacht ${bkDay(t.lastNight)} → ${bkDay(bkNext(t.lastNight))}` : 'nicht in dieser Woche'}</div></div>
+      <div class="kpi ${t.customersFailed ? 'warn' : ''}"><div class="label">Kunden mit Fehlern</div><div class="value">${t.customersFailed}</div><div class="sub">in KW ${isoWeek(first)}</div></div>
+      <div class="kpi"><div class="label">Fehlgeschlagene Nächte</div><div class="value">${t.failedCells}</div><div class="sub">Kunde × Nacht</div></div>
+      <div class="kpi"><div class="label">Ereignisse</div><div class="value">${t.events}</div><div class="sub">${t.reportingSuccess ? `${plural(t.reportingSuccess, 'Kunde meldet', 'Kunden melden')} auch Erfolge` : 'nur Fehlermeldungen'}</div></div>
+    </section>
+    <div class="toolbar">
+      <div class="seg" role="group" aria-label="Woche">
+        <button type="button" id="bk-prev" ${d.week <= -7 ? 'disabled' : ''}>‹ Vorwoche</button>
+        <button type="button" aria-pressed="true" id="bk-now" title="zur aktuellen Woche">KW ${isoWeek(first)} · ${bkDay(first)}–${bkDay(lastDay)}</button>
+        <button type="button" id="bk-next" ${d.week >= 0 ? 'disabled' : ''}>Nächste ›</button>
+      </div>
+      <input id="bk-search" class="search" type="search" placeholder="Kunde suchen …" value="${esc(bkState.q)}" aria-label="Kunde suchen">
+      <label class="check"><input type="checkbox" id="bk-only"${bkState.onlyProblems ? ' checked' : ''}> nur mit Problemen</label>
+    </div>
+    <div class="card" style="padding:0">
+      <div class="table-wrap"><table class="bk-table">
+        <thead><tr><th>Kunde</th>${d.days.map((x) => `<th class="bk-day${x.lastNight ? ' last' : ''}" title="${x.lastNight ? 'letzte Nacht' : ''}">${WD[x.weekday]}<br><span class="muted small">${bkDay(x.key)}</span></th>`).join('')}<th class="num">Fehler</th></tr></thead>
+        <tbody id="bk-body"></tbody>
+      </table></div>
+    </div>
+    <p class="muted small bk-legend">${['success', 'quiet', 'warning', 'failed', 'missing'].filter((k) => d.successSeen || !['success', 'missing'].includes(k)).map((k) => `<span><span class="bk-sym bk-${k}">${BK[k][0]}</span> ${BK[k][1]}</span>`).join('')}<span>Spalte = Sicherungsnacht (Ereignisse bis ${d.cutoffHour} Uhr zählen zur Nacht davor). Zeile anklicken: Ereignisse mit Beschreibung.</span></p>`;
+
+  const evHtml = (e) => `<details class="bk-ev">
+      <summary><span class="muted small bk-when">${bkTime(e.at)}</span>${chip(BK_RES[e.result]?.[0] || 'neutral', BK_RES[e.result]?.[1] || e.result)}
+        <span class="bk-what"><b>${esc(e.device)}</b> · ${esc(e.source || 'Ereignis')}${e.eventId ? ` · Ereignis-ID ${esc(e.eventId)}` : ''}${e.job ? ` · Job „${esc(e.job)}“` : ''}${e.retry ? ' · Wiederholung' : ''}<br><span class="bk-sum">${esc(e.summary)}</span></span></summary>
+      <pre class="bk-text">${esc(e.text || e.title)}</pre>
+    </details>`;
+  const detail = (c) => {
+    const days = c.cells.map((x, i) => ({ ...x, i })).filter((x) => x.events.length).reverse();
+    return `<tr class="bk-detail"><td colspan="${d.days.length + 2}">
+      ${days.length ? days.map((x) => `<div class="bk-daygrp"><h4>Nacht ${WD[d.days[x.i].weekday]} ${bkDay(x.day)} · <span class="bk-sym bk-${x.status}">${BK[x.status][0]}</span> ${BK[x.status][1]}</h4>${x.events.map(evHtml).join('')}</div>`).join('')
+        : `<p class="muted" style="margin:4px 0">Keine Backup-Meldungen in dieser Woche${c.reportsSuccess ? '' : ' – Atera meldet hier nur Fehler'}.</p>`}
+      <p style="margin:8px 0 0"><a href="#/kunden/${encodeURIComponent(c.id)}">Zum Kunden →</a>${c.lastFailure ? ` <span class="muted small">· letzter Fehler ${dateTime(c.lastFailure)}</span>` : ''}</p>
+    </td></tr>`;
+  };
+  const draw = () => {
+    const q = bkState.q.trim().toLowerCase();
+    const rows = d.customers.filter((c) => (!q || c.name.toLowerCase().includes(q)) && (!bkState.onlyProblems || c.failed || c.warnings || c.missing));
+    $('#bk-body').innerHTML = rows.length ? rows.map((c) => `<tr class="bk-row${bkState.open.has(c.id) ? ' open' : ''}" data-id="${esc(c.id)}" tabindex="0" aria-expanded="${bkState.open.has(c.id)}">
+        <td><span class="bk-caret" aria-hidden="true">▸</span><b>${esc(c.name)}</b>${c.paused ? ' <span class="chip neutral">Pausiert</span>' : ''}</td>
+        ${c.cells.map((x, i) => `<td class="bk-cell${d.days[i].lastNight ? ' last' : ''}" title="${esc(`${WD[d.days[i].weekday]} ${bkDay(x.day)}: ${BK[x.status][1]}${x.events.length ? ` · ${plural(x.events.length, 'Ereignis', 'Ereignisse')}` : ''}`)}"><span class="bk-sym bk-${x.status}">${BK[x.status][0]}</span></td>`).join('')}
+        <td class="num">${c.failed ? `<b>${c.failed}</b>` : '<span class="muted">0</span>'}</td></tr>${bkState.open.has(c.id) ? detail(c) : ''}`).join('')
+      : `<tr><td colspan="${d.days.length + 2}"><p class="empty">${bkState.onlyProblems ? 'Keine Probleme in dieser Woche.' : 'Kein Kunde gefunden.'}</p></td></tr>`;
+    $$('#bk-body .bk-row').forEach((tr) => {
+      const toggle = () => { const id = tr.dataset.id; if (bkState.open.has(id)) bkState.open.delete(id); else bkState.open.add(id); draw(); };
+      tr.onclick = toggle;
+      tr.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } };
+    });
+  };
+  draw();
+  $('#bk-refresh').onclick = () => renderBackups({ refresh: true });
+  $('#bk-prev').onclick = () => { bkState.week -= 1; renderBackups(); };
+  $('#bk-next').onclick = () => { bkState.week = Math.min(0, bkState.week + 1); renderBackups(); };
+  $('#bk-now').onclick = () => { if (bkState.week) { bkState.week = 0; renderBackups(); } };
+  $('#bk-search').oninput = (e) => { bkState.q = e.target.value; draw(); };
+  $('#bk-only').onchange = (e) => { bkState.onlyProblems = e.target.checked; draw(); };
 }
 
 // =====================================================================
